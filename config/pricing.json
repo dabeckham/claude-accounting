@@ -1,0 +1,12 @@
+{
+  "_comment": "USD per 1,000,000 tokens. Used by `timelog.sh cost` to price turn_end token rows. Cache multipliers (Anthropic standard): cache_write_5m = 1.25x input, cache_write_1h = 2x input, cache_read = 0.1x input. Base input/output rates cached 2026-05-26 from the claude-api skill; verify current rates at https://platform.claude.com/docs/en/pricing . Cost is computed at report time from this file, NOT stored per row, so editing these rates re-prices history correctly.",
+  "models": {
+    "claude-opus-4-8":   { "input": 5.0,  "output": 25.0, "cache_write_5m": 6.25, "cache_write_1h": 10.0, "cache_read": 0.50 },
+    "claude-opus-4-7":   { "input": 5.0,  "output": 25.0, "cache_write_5m": 6.25, "cache_write_1h": 10.0, "cache_read": 0.50 },
+    "claude-opus-4-6":   { "input": 5.0,  "output": 25.0, "cache_write_5m": 6.25, "cache_write_1h": 10.0, "cache_read": 0.50 },
+    "claude-sonnet-4-6": { "input": 3.0,  "output": 15.0, "cache_write_5m": 3.75, "cache_write_1h": 6.0,  "cache_read": 0.30 },
+    "claude-haiku-4-5":  { "input": 1.0,  "output": 5.0,  "cache_write_5m": 1.25, "cache_write_1h": 2.0,  "cache_read": 0.10 },
+    "claude-fable-5":    { "input": 10.0, "output": 50.0, "cache_write_5m": 12.5, "cache_write_1h": 20.0, "cache_read": 1.0 }
+  },
+  "default": { "input": 5.0, "output": 25.0, "cache_write_5m": 6.25, "cache_write_1h": 10.0, "cache_read": 0.50 }
+}

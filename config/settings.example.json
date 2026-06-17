@@ -1,0 +1,27 @@
+{
+  "_comment": "Merge the `hooks` block below into your USER-level ~/.claude/settings.json (applies to all projects). It logs a session_start, prompt, and turn_end event per occurrence. On Windows, if `sh ~/.claude/...` does not resolve, replace `~` with the absolute MSYS path, e.g. `sh \"/c/Users/<you>/.claude/timelog-hook.sh\" prompt`. Hooks take effect on the next session start.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          { "type": "command", "command": "sh ~/.claude/timelog-hook.sh session_start", "timeout": 10 }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh ~/.claude/timelog-hook.sh prompt", "timeout": 10 }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "sh ~/.claude/timelog-hook.sh turn_end", "timeout": 10 }
+        ]
+      }
+    ]
+  }
+}
