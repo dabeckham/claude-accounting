@@ -94,60 +94,88 @@ PY
     ;;
 
   cost)
-    # Price the turn_end token rows from pricing.json (report-time costing).
-    # arg: "today" (default) | "all" | N (last N turn_end rows).
-    python - "${1:-today}" "$LEDGER" "$HOME/.claude/time-tracking/pricing.json" <<'PY'
+    # Two columns: ACTUAL (locked-in cost from the schedule in effect when the turn
+    # ran — the stamped cost_usd, or date-matched for older/backfilled rows) and
+    # TODAY (same tokens re-priced at the current schedule). Args:
+    #   [today|all|N]   scope (default today)
+    #   --billing       also show the billing-channel note (off by default)
+    SCOPE="today"; SHOW_BILLING=0
+    for a in "$@"; do
+      case "$a" in
+        --billing) SHOW_BILLING=1 ;;
+        *) SCOPE="$a" ;;
+      esac
+    done
+    python - "$SCOPE" "$SHOW_BILLING" "$LEDGER" "$HOME/.claude/time-tracking/pricing.json" <<'PY'
 import sys, json, os, time
-mode, ledger, pricing_path = sys.argv[1], sys.argv[2], sys.argv[3]
+scope, show_billing, ledger, pricing_path = sys.argv[1], sys.argv[2] == "1", sys.argv[3], sys.argv[4]
 if not os.path.exists(ledger):
     print("(empty ledger)"); sys.exit()
 P = json.load(open(pricing_path, encoding="utf-8"))
-models, default = P.get("models", {}), P.get("default", {})
+scheds = sorted(P.get("schedules", []), key=lambda s: s.get("effective_from", ""))
 
-def rate(model):
-    return models.get(model, default)
+def sched_for(date_str):
+    elig = [s for s in scheds if s.get("effective_from", "") <= (date_str or "9999")]
+    return (elig or scheds)[-1] if scheds else None
 
-def cost_of(r):
-    pr = rate(r.get("model", ""))
+def cost_with(sched, r):
+    if not sched: return 0.0
+    rates = (sched.get("models") or {}).get(r.get("model", ""), sched.get("default") or {})
     return (
-        (r.get("in_tokens", 0)       * pr.get("input", 0))
-      + (r.get("out_tokens", 0)      * pr.get("output", 0))
-      + (r.get("cache_read", 0)      * pr.get("cache_read", 0))
-      + (r.get("cache_write_5m", 0)  * pr.get("cache_write_5m", 0))
-      + (r.get("cache_write_1h", 0)  * pr.get("cache_write_1h", 0))
+        r.get("in_tokens", 0)      * rates.get("input", 0)
+      + r.get("out_tokens", 0)     * rates.get("output", 0)
+      + r.get("cache_read", 0)     * rates.get("cache_read", 0)
+      + r.get("cache_write_5m", 0) * rates.get("cache_write_5m", 0)
+      + r.get("cache_write_1h", 0) * rates.get("cache_write_1h", 0)
     ) / 1_000_000.0
 
+current = scheds[-1] if scheds else None
 rows = [json.loads(l) for l in open(ledger, encoding="utf-8") if l.strip()]
 turns = [r for r in rows if r.get("category") == "turn_end" and "in_tokens" in r]
-if mode == "today":
+if scope == "today":
     today = time.strftime("%Y-%m-%d")
     turns = [r for r in turns if r.get("ts", "").startswith(today)]
-elif mode != "all":
-    try: turns = turns[-int(mode):]
+elif scope != "all":
+    try: turns = turns[-int(scope):]
     except ValueError: pass
 
 if not turns:
     print("(no priced turn_end rows yet — the Stop hook fills these on the next session)")
     sys.exit()
 
-print(f"{'time':17} {'model':18} {'in':>7} {'out':>7} {'cache_rd':>9} {'$cost':>8}  project")
-print("-"*82)
-tot, by_model, by_proj = 0.0, {}, {}
+def actual(r):
+    # Prefer the locked-in stamp; fall back to the schedule effective on the row's date.
+    if r.get("cost_usd") is not None:
+        return r["cost_usd"]
+    return cost_with(sched_for(r.get("ts", "")[:10]), r)
+
+print(f"{'time':17} {'model':16} {'in':>7} {'out':>7} {'cache_rd':>9} {'Actual$':>9} {'Today$':>9}  project")
+print("-" * 95)
+ta = tt = 0.0; by_model = {}
 for r in turns:
-    c = cost_of(r); tot += c
-    by_model[r.get("model","?")] = by_model.get(r.get("model","?"),0)+c
-    by_proj[r.get("project","?")] = by_proj.get(r.get("project","?"),0)+c
-    print(f"{r.get('ts','')[:16]:17} {(r.get('model','') or '')[:18]:18} "
+    a = actual(r); t = cost_with(current, r); ta += a; tt += t
+    by_model[r.get("model", "?")] = by_model.get(r.get("model", "?"), 0) + a
+    print(f"{r.get('ts','')[:16]:17} {(r.get('model','') or '')[:16]:16} "
           f"{r.get('in_tokens',0):>7} {r.get('out_tokens',0):>7} {r.get('cache_read',0):>9} "
-          f"{c:>8.4f}  {r.get('project','')[:20]}")
-print("-"*82)
-print(f"TOTAL  {len(turns)} turns   ${tot:.4f}")
-print("by model: " + ", ".join(f"{k} ${v:.4f}" for k,v in sorted(by_model.items(), key=lambda x:-x[1])))
-print("by project: " + ", ".join(f"{k} ${v:.4f}" for k,v in sorted(by_proj.items(), key=lambda x:-x[1])))
+          f"{a:>9.4f} {t:>9.4f}  {r.get('project','')[:18]}")
+print("-" * 95)
+print(f"TOTAL {len(turns)} turns   Actual ${ta:.4f}   Today ${tt:.4f}")
+print("by model (Actual): " + ", ".join(f"{k} ${v:.4f}" for k, v in sorted(by_model.items(), key=lambda x: -x[1])))
+if show_billing:
+    modes = [r.get("billing_mode") for r in rows if r.get("category") == "session_start" and r.get("billing_mode")]
+    mode = modes[-1] if modes else "unknown"
+    print()
+    if mode == "subscription":
+        print("billing: subscription - these $ are REFERENCE VALUE (API-equivalent), not money billed.")
+        print("         See the Anthropic Console for actual charges and subscription/overage split.")
+    elif mode == "api_key":
+        print("billing: api_key - these $ approximate pay-as-you-go charges at list prices.")
+    else:
+        print("billing: unknown - interpret $ as reference value.")
 PY
     ;;
 
   *)
-    echo "usage: timelog.sh {now | event <cat> <desc> [sess] [proj] | interval <cat> <start> <end|now> <desc> [sess] [proj] | view [N] | today | cost [today|all|N]}"
+    echo "usage: timelog.sh {now | event <cat> <desc> [sess] [proj] | interval <cat> <start> <end|now> <desc> [sess] [proj] | view [N] | today | cost [today|all|N] [--billing]}"
     ;;
 esac

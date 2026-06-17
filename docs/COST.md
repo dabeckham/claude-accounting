@@ -1,10 +1,32 @@
-# Cost — how the dollar figure is derived
+# Cost — locked-in actual vs present-day value
 
-Cost is **computed at report time** from the token counts already on each `turn_end` row, multiplied by a per‑model rate table in [`config/pricing.json`](../config/pricing.json). Nothing is stored per row, so correcting or updating a rate automatically re‑prices all history.
+Each turn's dollar cost is **locked in at the prices in effect when it ran**, so a later price change never rewrites history. Reports show two columns:
 
-## Formula
+- **Actual** — what the turn cost under the pricing schedule in effect that day (stamped on the row as `cost_usd`).
+- **Today** — the same tokens re-priced at the *current* schedule (computed at report time).
 
-For each `turn_end` row, using the rates for that row's `model` (USD per 1,000,000 tokens):
+## Dated pricing schedules
+
+[`config/pricing.json`](../config/pricing.json) holds a list of **schedules**, each with an `effective_from` date:
+
+```jsonc
+{
+  "schedules": [
+    {
+      "effective_from": "2026-05-26",
+      "models": { "claude-opus-4-8": { "input": 5.0, "output": 25.0,
+                  "cache_write_5m": 6.25, "cache_write_1h": 10.0, "cache_read": 0.50 }, ... },
+      "default": { ... }
+    }
+  ]
+}
+```
+
+The schedule applied to a turn is the **latest one whose `effective_from` ≤ the turn's date**. When Anthropic changes prices, **append a new schedule** with a later `effective_from` — never edit a past schedule except to correct an error. Old turns keep their original rates; new turns use the new ones.
+
+## How a turn is priced
+
+The `Stop` hook computes and **stamps** `cost_usd` + `pricing_from` on each `turn_end` row using the schedule effective that day:
 
 ```
 cost = ( in_tokens       × input
@@ -14,38 +36,27 @@ cost = ( in_tokens       × input
        + cache_write_1h  × cache_write_1h ) ÷ 1,000,000
 ```
 
-## Rate table
+Cache rates are the standard Anthropic multipliers of the input rate: **write-5m = 1.25×**, **write-1h = 2×**, **read = 0.1×**. (Claude Code's own cache writes are typically 1-hour.)
 
-`pricing.json` holds base input/output rates per model plus the three cache rates. The cache rates are the standard Anthropic multipliers of the input rate:
+Existing rows logged before cost stamping was added are **backfilled** from the schedule effective on their date.
 
-| Component | Rate |
-|---|---|
-| cache write, 5‑minute TTL | **1.25× input** |
-| cache write, 1‑hour TTL | **2× input** |
-| cache read | **0.1× input** |
+## Reporting
 
-Example base rates (per 1M tokens; cached 2026‑05‑26 — **verify current values** at <https://platform.claude.com/docs/en/pricing>):
+```sh
+sh ~/.claude/timelog.sh cost today          # today's turns: Actual + Today columns + totals
+sh ~/.claude/timelog.sh cost all            # all priced turns
+sh ~/.claude/timelog.sh cost 30             # last 30 priced turns
+sh ~/.claude/timelog.sh cost all --billing  # also print the billing-channel note (off by default)
+```
 
-| Model | input | output | cache write 5m / 1h | cache read |
-|---|---|---|---|---|
-| `claude-opus-4-8` | $5 | $25 | $6.25 / $10 | $0.50 |
-| `claude-sonnet-4-6` | $3 | $15 | $3.75 / $6 | $0.30 |
-| `claude-haiku-4-5` | $1 | $5 | $1.25 / $2 | $0.10 |
+Actual and Today are equal until a second dated schedule exists; once prices change, the columns diverge and you can see both what you "spent" then and what it would cost now.
 
-An unknown model falls back to the `default` block in `pricing.json`.
+## ⚠️ Reference value vs real dollars (important)
 
-## Why cache writes are split by TTL
+Under a **subscription** login, Claude Code usage is covered by your flat monthly fee — so these dollar figures are **reference value** ("what it would cost at pay-as-you-go API prices"), **not** money billed. The `session_start` event records the detected `billing_mode` (`subscription` / `api_key` / `unknown`), and `cost --billing` surfaces a note — but reports **do not** show it by default.
 
-Claude Code uses prompt caching heavily, and a cache write at the 1‑hour TTL costs **2×** input vs **1.25×** for the 5‑minute TTL. The transcript reports the two buckets separately (`cache_creation.ephemeral_5m_input_tokens` / `ephemeral_1h_input_tokens`), so the hook records them separately and the cost formula prices each correctly. (Claude Code's own writes are typically 1‑hour.)
+What the ledger **cannot** know (server-side only): which tokens fell within your subscription allowance vs paid overage, and your true billed dollars. The **Anthropic Console** is authoritative for actual charges. See the [open reconciliation issue](https://github.com/dabeckham/claude-accounting/issues/3).
 
 ## A note on magnitude
 
-On long agentic sessions, **`cache_read` dominates** the cost — the full context is re‑read on every tool round‑trip. A single heavy turn can be several dollars even though the visible output is small. That's accurate to how the API bills, and it's exactly the accountability signal this project exists to surface.
-
-## Usage
-
-```sh
-sh ~/.claude/timelog.sh cost today    # priced turns today + totals by model/project
-sh ~/.claude/timelog.sh cost all      # all priced turns
-sh ~/.claude/timelog.sh cost 30       # last 30 priced turns
-```
+On long agentic sessions **`cache_read` dominates** — the full context is re-read on every tool round-trip — so a single heavy turn can be several dollars even with little visible output. That's accurate to how the API bills, and it's the accountability signal this project exists to surface.

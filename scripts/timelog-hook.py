@@ -7,11 +7,14 @@ argv[1] = event category: session_start | prompt | turn_end
 
 For turn_end, also parses the tail of the transcript (path from the hook event)
 to record the just-finished turn's model + token usage for accountability:
-  model, in_tokens, out_tokens, cache_read, cache_creation, web_search, web_fetch,
-  used_thinking, msgs.
+  model, in_tokens, out_tokens, cache_read, cache_write_5m, cache_write_1h,
+  web_search, web_fetch, used_thinking, msgs — and stamps cost_usd + pricing_from
+  using the pricing schedule in effect that day (the immutable 'Actual' spend).
 Token usage and model are NOT hook fields; they live in the transcript, which is
-the only place per-turn usage is persisted. The effort/reasoning level a user
-selects is not recorded anywhere, so it cannot be logged (model id is the proxy).
+the only place per-turn usage is persisted. session_start records billing_mode
+(subscription | api_key | unknown) from the auth method. The effort/reasoning level
+is not recorded anywhere and can't be auto-detected; it is captured via the in-band
+"effort: <level>" tag on the prompt event (with carry-forward).
 
 Writes nothing to stdout so it never injects context or blocks a turn.
 """
@@ -34,6 +37,34 @@ desc = ""
 rec = {"kind": "event", "epoch": int(time.time()),
        "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
        "category": cat, "session": sess, "project": proj, "desc": desc}
+
+
+def _price_turn(r):
+    """Best-effort: stamp a turn's cost using the pricing schedule in effect TODAY
+    (the immutable 'Actual' spend). Returns (cost_usd, pricing_from) or (None, None)
+    on any problem — never blocks logging. Reports re-derive a 'Today' column from
+    the current schedule; this locks in what the turn cost at the time."""
+    try:
+        pf = os.path.join(os.path.expanduser("~"), ".claude", "time-tracking", "pricing.json")
+        P = json.load(open(pf, encoding="utf-8"))
+        scheds = P.get("schedules") or []
+        if not scheds:
+            return (None, None)
+        today = time.strftime("%Y-%m-%d")
+        elig = [s for s in scheds if s.get("effective_from", "") <= today] or scheds
+        sched = max(elig, key=lambda s: s.get("effective_from", ""))
+        rates = (sched.get("models") or {}).get(r.get("model", ""), sched.get("default") or {})
+        cost = (
+            r.get("in_tokens", 0)      * rates.get("input", 0)
+          + r.get("out_tokens", 0)     * rates.get("output", 0)
+          + r.get("cache_read", 0)     * rates.get("cache_read", 0)
+          + r.get("cache_write_5m", 0) * rates.get("cache_write_5m", 0)
+          + r.get("cache_write_1h", 0) * rates.get("cache_write_1h", 0)
+        ) / 1_000_000.0
+        return (round(cost, 6), sched.get("effective_from"))
+    except Exception:
+        return (None, None)
+
 
 if cat == "prompt":
     text = str(data.get("prompt") or "")
@@ -66,6 +97,16 @@ if cat == "prompt":
             rec["effort_certain"] = False
 elif cat == "session_start":
     rec["desc"] = str(data.get("source") or "")
+    # Billing channel (stored, not shown on reports unless asked). Detected from the
+    # auth method: an API key env var → pay-as-you-go; otherwise an OAuth/login
+    # credential → subscription. This is the channel only — it does NOT claim which
+    # tokens fell within a subscription allowance vs paid overage (Console-only).
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        rec["billing_mode"] = "api_key"
+    elif os.path.exists(os.path.join(os.path.expanduser("~"), ".claude", ".credentials.json")):
+        rec["billing_mode"] = "subscription"
+    else:
+        rec["billing_mode"] = "unknown"
 elif cat == "turn_end":
     # Parse the just-finished turn from the transcript tail (bounded for speed —
     # transcripts can be tens of MB). Sum usage over assistant messages since the
@@ -157,6 +198,11 @@ elif cat == "turn_end":
             rec["web_fetch"] = wf
             rec["used_thinking"] = thinking
             rec["msgs"] = nmsg
+            # Lock in the cost at the prices in effect today (immutable Actual spend).
+            c, pfrom = _price_turn(rec)
+            if c is not None:
+                rec["cost_usd"] = c
+                rec["pricing_from"] = pfrom
     except Exception:
         pass
 

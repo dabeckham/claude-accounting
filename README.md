@@ -27,7 +27,8 @@ Claude Code doesn't surface either directly. This project answers both by tappin
 | Model used per turn | session transcript | ✅ automatic |
 | Token usage per turn (input / output / cache read / cache write 5m & 1h) | session transcript | ✅ automatic |
 | Web search / fetch counts, extended‑thinking flag | session transcript | ✅ automatic |
-| Dollar cost per turn | computed from tokens × pricing table | ✅ at report time |
+| Dollar cost per turn (locked in at that day's prices + present-day re-price) | tokens × dated pricing schedule | ✅ stamped at write time |
+| Billing channel (subscription vs api_key) | auth method, per session | ✅ stored (shown only on request) |
 | Task‑level intervals (`thinking` / `coding` / `deploy` / …) | the agent logs them | ✅ best‑effort |
 | Reasoning **effort** level | **in‑band tag** in your message | ⚠️ manual tag (see below) |
 
@@ -64,7 +65,7 @@ Two layers:
 1. **Automatic (hooks).** `SessionStart`, `UserPromptSubmit`, and `Stop` hooks fire a tiny logger that appends one event per occurrence. The `Stop` hook additionally parses the **tail of the session transcript** to pull the just‑finished turn's model and token usage — these are *not* in the hook payload, they live only in the transcript.
 2. **Semantic (agent‑logged).** The agent brackets meaningful work with `timelog.sh interval <category> <start> now "<desc>"` so a turn can be broken into `thinking` vs `coding` vs `deploy`, which the hooks can't see.
 
-Everything lands in **one append‑only JSONL ledger**. Single‑line appends are atomic, so parallel sessions can't corrupt it. Cost is computed at **report time** from a pricing table, never stored per row — so correcting a rate re‑prices history.
+Everything lands in **one append‑only JSONL ledger**. Single‑line appends are atomic, so parallel sessions can't corrupt it. Each turn's **cost is locked in** at the prices in effect that day (stamped on the row from a *dated* pricing schedule), so a later price change never rewrites history — and reports also show a present‑day "Today" column. See [`docs/COST.md`](docs/COST.md).
 
 ---
 
@@ -103,8 +104,9 @@ sh ~/.claude/timelog.sh interval coding "$START" now "implement merge pass"
 # views
 sh ~/.claude/timelog.sh today                       # today's entries + per-category totals
 sh ~/.claude/timelog.sh view 30                     # last 30 entries
-sh ~/.claude/timelog.sh cost today                  # priced turns today + totals
+sh ~/.claude/timelog.sh cost today                  # today's turns: Actual + Today $ columns
 sh ~/.claude/timelog.sh cost all                    # all priced turns
+sh ~/.claude/timelog.sh cost all --billing          # also append the billing-channel note
 ```
 
 ### Reasoning‑effort tagging
@@ -128,7 +130,7 @@ claude-accounting/
 │   ├── timelog-hook.sh           ← hook entry point (forwards stdin to the .py)
 │   └── timelog-hook.py           ← appends events; parses transcript tail for tokens/model; parses effort tag
 ├── config/
-│   ├── pricing.json              ← USD per 1M tokens, per model (edit to update rates)
+│   ├── pricing.json              ← dated pricing schedules (append a new one when rates change)
 │   └── settings.example.json     ← the hooks block to merge into ~/.claude/settings.json
 └── docs/
     ├── SCHEMA.md                 ← the JSONL ledger schema + conventions

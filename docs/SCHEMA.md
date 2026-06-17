@@ -40,26 +40,42 @@ Every line has: `kind`, `epoch`, `ts` (ISO8601 w/ tz offset), `category`,
     the transcript tail by `timelog-hook.py`: `model` (e.g. claude-opus-4-8),
     `in_tokens`, `out_tokens`, `cache_read`, `cache_write_5m`, `cache_write_1h`
     (cache writes split by TTL — they bill at different rates), `web_search`,
-    `web_fetch`, `used_thinking` (bool), `msgs` (assistant messages in the turn).
-    Token usage + model are NOT hook fields — they live only in the transcript,
-    so the Stop hook reads it. The token sums cover every API call in the turn
-    (each tool round-trip is billed), so `cache_read` can be large.
+    `web_fetch`, `used_thinking` (bool), `msgs` (assistant messages in the turn),
+    plus **`cost_usd`** + **`pricing_from`** — the locked-in cost computed from the
+    pricing schedule in effect that day. Token usage + model are NOT hook fields —
+    they live only in the transcript, so the Stop hook reads it. The token sums
+    cover every API call in the turn (each tool round-trip is billed), so
+    `cache_read` can be large.
+  - **`session_start` events** carry `billing_mode` (`subscription | api_key |
+    unknown`), detected from the auth method. Stored but NOT shown on cost reports
+    unless asked (`cost --billing`).
 
-### Cost
-`sh ~/.claude/timelog.sh cost [today|all|N]` prices the `turn_end` rows from
-`~/.claude/time-tracking/pricing.json` (USD per 1M tokens, per model). Cost is
-computed at **report time** from that table — not stored per row — so correcting
-or updating a rate re-prices history correctly. Cache multipliers are the
-Anthropic standard: write-5m = 1.25× input, write-1h = 2× input, read = 0.1×
-input. Update base rates from https://platform.claude.com/docs/en/pricing .
+### Cost — locked-in (Actual) vs present-day (Today)
+`pricing.json` holds **dated schedules** (`effective_from`); the schedule applied
+to a turn is the latest one whose date ≤ the turn's date. The Stop hook **stamps**
+each turn with `cost_usd` + `pricing_from` using that schedule — the immutable
+**Actual** spend, so a later price change never rewrites history. When prices
+change, **append a new dated schedule** (don't edit past ones except to fix an error).
+
+`sh ~/.claude/timelog.sh cost [today|all|N] [--billing]` shows two columns:
+**Actual** (the stamped cost / date-matched for older rows) and **Today** (same
+tokens re-priced at the current schedule). `--billing` appends the billing-channel
+note (off by default). Cache multipliers: write-5m = 1.25× input, write-1h = 2×
+input, read = 0.1× input. Verify base rates at
+https://platform.claude.com/docs/en/pricing .
+
+> ⚠️ Under a **subscription** login these dollars are **reference value** (API-equivalent),
+> not money billed. Local data can't see the subscription/overage split — that's
+> Console-only.
 - **interval**: adds `start_epoch, start_ts, end_epoch, end_ts, dur_s`
   (`epoch`/`ts` = end). category ∈ `thinking | coding | deploy | research |
   review | waiting | meeting | other`.
 
 ### What is NOT capturable
-- **Reasoning/effort level** (fast mode, effort selection) is not recorded
-  anywhere in the transcript, so it can't be logged. `model` + `used_thinking`
-  are the only persisted proxies.
+- **Reasoning/effort level** can't be *auto-detected* (not in the transcript or
+  disk). It's captured via the in-band `effort:` tag (see the `prompt` event above).
+- **Actual billed dollars / subscription-vs-overage split** — server-side only;
+  the Anthropic Console is authoritative. Local `cost` figures are reference value.
 - Hooks only fire inside **Claude Code** on this machine. They do NOT see
   claude.ai web, the Claude desktop/mobile chat apps, or raw Anthropic API
   usage. For all-surface, account-wide token/billing totals, the authoritative
