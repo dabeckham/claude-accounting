@@ -128,38 +128,41 @@ claude-accounting/
 ├── scripts/
 │   ├── timelog.sh                ← agent/CLI helper: now | event | interval | view | today | cost
 │   ├── timelog-hook.sh           ← hook entry point (forwards stdin to the .py)
-│   └── timelog-hook.py           ← appends events; parses transcript tail for tokens/model; parses effort tag
+│   ├── timelog-hook.py           ← appends events; parses transcript tail for tokens/model; parses effort tag
+│   └── timelog-report.py         ← deterministic report generator (engine behind /accounting)
 ├── config/
 │   ├── pricing.json              ← dated pricing schedules (append a new one when rates change)
 │   └── settings.example.json     ← the hooks block to merge into ~/.claude/settings.json
-├── docs/
-│   ├── SCHEMA.md                 ← the JSONL ledger schema + conventions
-│   ├── HOOKS.md                  ← how the three hooks work + the transcript-parsing approach
-│   ├── COST.md                   ← cost derivation + pricing/cache-rate details
-│   ├── EFFORT.md                 ← why effort can't be auto-detected; in-band tagging; the relay option
-│   └── AGENT_INSTRUCTIONS.md     ← the cross-session CLAUDE.md snippet
-└── skills/
-    └── accounting/               ← the /accounting reporting skill (copy into ~/.claude/skills/)
-        ├── SKILL.md
-        └── report.py             ← deterministic report generator
+├── commands/
+│   └── accounting.md             ← the /accounting slash command (copy into ~/.claude/commands/)
+└── docs/
+    ├── SCHEMA.md                 ← the JSONL ledger schema + conventions
+    ├── HOOKS.md                  ← how the three hooks work + the transcript-parsing approach
+    ├── COST.md                   ← cost derivation + pricing/cache-rate details
+    ├── EFFORT.md                 ← why effort can't be auto-detected; in-band tagging; the relay option
+    └── AGENT_INSTRUCTIONS.md     ← the cross-session CLAUDE.md snippet
 ```
 
-## Reporting — the `/accounting` skill
+## Reporting — the `/accounting` command
 
-For a readable report instead of raw JSONL, install the skill and run it:
+For a readable report instead of raw JSONL, install the slash command + the report engine:
 
 ```sh
-cp -r skills/accounting ~/.claude/skills/        # then restart Claude Code so /accounting registers
+cp scripts/timelog-report.py ~/.claude/timelog-report.py
+mkdir -p ~/.claude/commands && cp commands/accounting.md ~/.claude/commands/
+# then restart Claude Code so /accounting registers (slash commands load at startup)
 ```
 
-Invoke `/accounting [today|week|month|all|N]` in Claude Code, or run the generator directly:
+Invoke **`/accounting [today|week|month|all|N] [--billing]`** in Claude Code, or run the engine directly any time:
 
 ```sh
-python ~/.claude/skills/accounting/report.py week            # default
-python ~/.claude/skills/accounting/report.py all --billing
+python ~/.claude/timelog-report.py week            # default
+python ~/.claude/timelog-report.py all --billing
 ```
 
 It prints sessions & interactive time, a time breakdown (agent working time vs your idle/reading vs logged task intervals), cost (Actual + Today), token totals, and the effort mix — all computed deterministically from the ledger.
+
+> Slash commands register **at Claude Code startup**, so a freshly-installed `/accounting` only appears in a new session. Until then, run `timelog-report.py` directly.
 
 ---
 
