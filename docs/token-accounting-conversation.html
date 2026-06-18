@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Why a Tiny Reply &ldquo;Costs&rdquo; 54,000 Tokens</title>
+<style>
+  :root{
+    --bg:#f7f7f5; --card:#ffffff; --ink:#1f2328; --muted:#656d76;
+    --line:#e3e3df; --accent:#b5541b; --accent-soft:#fbeee4;
+    --code-bg:#1f2328; --code-ink:#e6edf3; --you:#eef4fb; --you-line:#c7dcf2;
+    --tldr:#eef6ee; --tldr-line:#bfe0bf;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  .wrap{max-width:820px; margin:0 auto; padding:48px 22px 96px}
+  header.doc{border-bottom:2px solid var(--accent); padding-bottom:22px; margin-bottom:28px}
+  .kicker{font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:700; margin:0 0 10px}
+  h1{font-size:31px; line-height:1.2; margin:0 0 10px; letter-spacing:-.01em}
+  .byline{font-size:14px; color:var(--muted); margin:0 0 14px}
+  .byline strong{color:var(--ink)}
+  .sub{color:var(--muted); font-size:15.5px; margin:0; max-width:62ch}
+  h2{font-size:21px; margin:46px 0 14px; padding-top:10px; letter-spacing:-.01em}
+  h3{font-size:16px; margin:30px 0 8px; color:var(--accent)}
+  p{margin:0 0 14px}
+  .tldr{background:var(--tldr); border:1px solid var(--tldr-line); border-radius:12px; padding:18px 22px; margin:0 0 30px}
+  .tldr h2{margin:0 0 8px; padding:0; font-size:13px; letter-spacing:.12em; text-transform:uppercase; color:#2f6b2f}
+  .tldr ul{margin:0; padding-left:20px}
+  .tldr li{margin:5px 0}
+  .turn{margin:18px 0}
+  .who{font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:0 0 6px}
+  .you{background:var(--you); border:1px solid var(--you-line); border-radius:12px; padding:14px 18px}
+  .you .who{color:#2b6cb0}
+  pre{
+    background:var(--code-bg); color:var(--code-ink); border-radius:10px;
+    padding:16px 18px; overflow-x:auto; font:13px/1.5 "SF Mono",ui-monospace,"Cascadia Code",Consolas,monospace;
+    margin:14px 0;
+  }
+  code{font:13.5px/1.4 "SF Mono",ui-monospace,"Cascadia Code",Consolas,monospace; background:var(--accent-soft); color:#8a3d12; padding:1px 5px; border-radius:5px}
+  pre code{background:none; color:inherit; padding:0}
+  table{border-collapse:collapse; width:100%; margin:16px 0; font-size:14.5px; background:var(--card); border-radius:10px; overflow:hidden}
+  th,td{border:1px solid var(--line); padding:9px 12px; text-align:left; vertical-align:top}
+  th{background:#f0efeb; font-weight:650}
+  td.num,th.num{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap}
+  tr.total td{font-weight:700; background:#faf6f2}
+  .callout{background:var(--accent-soft); border-left:4px solid var(--accent); border-radius:0 8px 8px 0; padding:14px 18px; margin:18px 0}
+  .callout p:last-child{margin-bottom:0}
+  .key{font-weight:650}
+  .editnote{font-size:12.5px; color:var(--muted); font-style:italic; margin-top:8px}
+  .seealso{font-size:13.5px; color:var(--muted); margin-top:10px}
+  a{color:var(--accent)}
+  .cough{display:inline-block; font-style:italic; color:var(--muted); animation:coughJitter 4.5s ease-in-out infinite; will-change:transform,color}
+  @keyframes coughJitter{
+    0%,80%,100%{transform:translate(0,0) rotate(0); color:var(--muted); text-shadow:none}
+    83%{transform:translate(-1px,1px) rotate(-3deg); color:#d6453a; text-shadow:0 0 6px rgba(214,69,58,.55)}
+    86%{transform:translate(1.5px,-1px) rotate(3deg); color:#f0593f; text-shadow:0 0 9px rgba(240,89,63,.7)}
+    89%{transform:translate(-2px,1px) rotate(-2deg); color:#d6453a}
+    92%{transform:translate(1px,1px) rotate(2deg); color:#ff6a4d; text-shadow:0 0 11px rgba(255,106,77,.78)}
+    95%{transform:translate(0,0) rotate(0); color:var(--muted); text-shadow:none}
+  }
+  @media (prefers-reduced-motion:reduce){.cough{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <p class="kicker">Field notes &middot; Claude usage accounting</p>
+  <h1>Why a Tiny Reply &ldquo;Costs&rdquo; 54,000 Tokens</h1>
+  <p class="byline">By <strong>Don Beckham</strong> &middot; 18 June 2026</p>
+  <p class="sub">A walk-through of how per-turn token accounting actually works in an
+  agentic chat session &mdash; why a 1,600-character exchange reports tens of thousands of
+  input and cache tokens, how prompt caching makes long conversations cheap (and how to
+  avoid throwing that away), what it costs to serve, and how fast real spend adds up.</p>
+</header>
+
+<div class="tldr">
+  <h2>TL;DR</h2>
+  <ul>
+    <li>Every turn re-sends the <em>entire</em> conversation context to the model, so the
+    <code>input</code> and <code>cache</code> token counts reflect the whole session &mdash;
+    not your latest message. Only <code>output</code> tracks what you just saw on screen.</li>
+    <li>Prompt caching is what keeps this affordable: a cache <em>read</em> costs
+    <strong>$0.50 / M</strong> tokens versus <strong>$10 / M</strong> to write the
+    1-hour cache &mdash; a <strong>20&times;</strong> difference. Claude Code desktop uses
+    the 1-hour cache.</li>
+    <li>That cache refreshes its 1-hour timer every time it's used. If you'll resume the
+    same conversation within the hour, a tiny keep-alive message keeps the whole context at
+    read price; let it lapse and your next message rewrites the entire prefix at 20&times;.</li>
+    <li>It adds up fast: a single heavy day can top <strong>$800</strong> of reference
+    value, the last 7 days came to <strong>$2,567</strong>, and the trailing 30 days to
+    <strong>$3,443</strong> &mdash; and the single biggest line item is just cache reads.</li>
+  </ul>
+</div>
+
+<p>This started as a routine glance at my own time- and cost-tracking ledger and turned
+into a useful tour of how token billing works under the hood. I'm writing it up because
+the confusion it untangled for me is an extremely common one: the gap between how big a
+reply <em>looks</em> and how many tokens it <em>reports</em>.</p>
+
+<h2>1. The reports that started it</h2>
+
+<p>It began with a single command. My very first message of the day was just the
+accounting skill that I <span class="cough">*cough*</span> I mean Claude wrote &mdash;
+<code>/accounting</code> &mdash; run as message number one. It ran
+the report script and printed the report plus a short written summary:
+<strong>about 1,630 characters of text on screen, and nothing else.</strong> I read no
+files into the conversation, pasted no large content, attached no documents. Just a
+slash-command and its modest output. That's what makes the token figures that follow so
+surprising at first glance.</p>
+
+<p>That first report, run just after midnight before any real work, showed nothing &mdash;
+as expected:</p>
+
+<pre><code>TOKENS
+  in 0  out 0  cache_read 0  cache_write 0
+
+COST  (reference value)
+  Actual $0.00    Today $0.00</code></pre>
+
+<p>A second run moments later &mdash; after that one short <code>/accounting</code> exchange
+&mdash; looked very different:</p>
+
+<pre><code>SESSIONS
+  1 sessions | 1 turns | 2 prompts
+  session wall-clock (incl. idle): 1m 58s
+
+TIME
+  agent working time (sum of turns): 18s
+  your time between turns (idle/read): 1m 40s
+
+COST  (reference value)
+  Actual $0.28    Today $0.28
+
+TOKENS
+  in 13,702  out 578  cache_read 54,090  cache_write 16,524</code></pre>
+
+<div class="turn you">
+  <p class="who">Prompt</p>
+  <p>Something has got to be wrong with these numbers. The first report shows no token
+  use today, which is accurate because it's after midnight and there had been no
+  activity before invoking the accounting skill. The second invocation should be
+  reporting only the token count for the previous turn &mdash; and there is no way that
+  turn used <code>in 13,702 / out 578 / cache_read 54,090 / cache_write 16,524</code>.
+  The whole exchange &mdash; the bash output, the report repeated back, and the summary
+  &mdash; was only 1,630 characters. The token count should have been even less than that
+  after it was tokenized. I'm also completely confused about how that single turn could
+  have used 54K and 16K cache reads and writes respectively.</p></div>
+
+<h2>2. The key idea: only one number tracks your reply</h2>
+
+<p>The intuition &ldquo;small reply &rarr; small token count&rdquo; is reasonable, but it
+doesn't hold for a stateless chat API. Here is the crucial split:</p>
+
+<div class="callout">
+  <p class="key"><code>out</code> is the only number tied to the visible reply. Everything
+  else is the entire conversation context being re-processed on that turn.</p>
+</div>
+
+<ul>
+  <li><span class="key"><code>out 578</code></span> &mdash; this <em>is</em> the reply.
+  About 1,630 characters &divide; 578 &asymp; 2.8 characters per token. That checks out
+  almost exactly.</li>
+  <li><span class="key"><code>in 13,702</code>, <code>cache_read 54,090</code>,
+  <code>cache_write 16,524</code></span> &mdash; these are the <em>input</em> side: the
+  whole context sent to the model to produce those 578 output tokens.</li>
+</ul>
+
+<p>Every API call re-sends the full context: the system prompt, <em>all</em> tool
+schemas, the assistant's operating instructions, the available-skills list, project
+configuration and memory, and the entire prior conversation. That is tens of thousands of
+tokens before the user types a single character. In an agentic session with a large
+toolset, a 50,000-token stable prefix on every turn is ordinary.</p>
+
+<h3>What the cache fields mean</h3>
+<table>
+  <tr><th>Field</th><th class="num">Value</th><th>What it actually is</th></tr>
+  <tr><td><code>out</code></td><td class="num">578</td><td>The generated reply text (~1,630 chars &divide; 2.8 &asymp; 578 &check;)</td></tr>
+  <tr><td><code>in</code></td><td class="num">13,702</td><td>Uncached input tokens sent this turn</td></tr>
+  <tr><td><code>cache_read</code></td><td class="num">54,090</td><td>Stable prefix served from cache &mdash; the cheap path, a tenth of input price</td></tr>
+  <tr><td><code>cache_write</code></td><td class="num">16,524</td><td>New content written into the cache this turn</td></tr>
+</table>
+
+<p>The large <code>cache_write</code> is the tell-tale sign of an <em>early</em> turn: the
+cache was cold, so a big chunk of context was written to it for the first time (a cache
+miss becomes a cache write). On later turns that prefix is warm, so <code>cache_read</code>
+climbs and <code>cache_write</code> shrinks. A third report later in the session showed
+exactly that:</p>
+
+<pre><code>TOKENS
+  in 14,111  out 7,686  cache_read 354,346  cache_write 26,671</code></pre>
+
+<p><code>cache_read</code> jumped to 354K (the now-warm prefix, read back each turn) while
+<code>cache_write</code> stayed flat &mdash; and <code>out</code> climbed to 7,686, because
+that's the one figure that tracks the visible replies, and the replies had gotten longer.</p>
+
+<p>The ledger code bears this out: the token figures aren't computed from the reply text at
+all. They are summed straight from the <code>usage</code> block the API itself records for
+each assistant message &mdash; <code>input_tokens</code>, <code>output_tokens</code>,
+<code>cache_read_input_tokens</code>, and <code>cache_creation_input_tokens</code> &mdash;
+over the messages since the last user prompt. Those are the provider's own billed counts,
+not an estimate.</p>
+
+<h2>3. The cache is the whole game &mdash; don't let it expire</h2>
+
+<p>If every turn re-sends a 50K&ndash;700K-token prefix, why isn't every turn ruinously
+expensive? Prompt caching. The first time the model sees a stable block of context it
+<em>writes</em> it to a cache; on later turns that same block is <em>read</em> back at a
+fraction of the price instead of being re-processed from scratch.</p>
+
+<p>Here is the pricing that makes the strategy obvious. These are the list rates for the
+model in use here, Claude Opus 4.8, per million tokens:</p>
+
+<table>
+  <tr><th>Token type</th><th class="num">Rate / 1M</th><th class="num">vs. input</th><th>Notes</th></tr>
+  <tr><td>Input (uncached)</td><td class="num">$5.00</td><td class="num">1&times;</td><td>Fresh tokens the model must read in full</td></tr>
+  <tr><td>Output</td><td class="num">$25.00</td><td class="num">5&times;</td><td>Generated tokens (the reply)</td></tr>
+  <tr><td>Cache write &mdash; 5-min TTL</td><td class="num">$6.25</td><td class="num">1.25&times;</td><td>Short-lived cache</td></tr>
+  <tr><td>Cache write &mdash; 1-hour TTL</td><td class="num">$10.00</td><td class="num">2&times;</td><td><strong>What Claude Code desktop uses</strong></td></tr>
+  <tr><td>Cache read (hit)</td><td class="num">$0.50</td><td class="num">0.1&times;</td><td>Re-using already-cached context</td></tr>
+</table>
+
+<p>Two facts do all the work here:</p>
+<ul>
+  <li><span class="key">A cache read is 20&times; cheaper than a 1-hour cache write</span>
+  ($0.50 vs $10.00 per million), and 10&times; cheaper than sending the same tokens as fresh
+  uncached input.</li>
+  <li><span class="key">Claude Code desktop writes to the 1-hour cache</span>, and a cache's
+  timer is refreshed every time it is used. (Verified directly from the ledger: across a
+  recent week, every cache-write token landed in the 1-hour bucket and none in the 5-minute
+  bucket.)</li>
+</ul>
+
+<div class="callout">
+  <p class="key">The practical rule: if you'll continue the same conversation within the
+  hour, keep the cache warm. A trivial keep-alive message &mdash; even just &ldquo;.&rdquo;
+  &mdash; reads the existing context (cheap) and resets the 1-hour timer. Let the hour lapse
+  and your next message has to <em>rewrite</em> the entire prefix at 20&times; the read price
+  &mdash; so the break-even is about 19 hours away (one rewrite &asymp; 20 hourly keep-alive
+  reads, and the prefix size cancels out).</p>
+</div>
+
+<p>What that's worth, concretely. Take a long-running session with a 200,000-token cached
+prefix &mdash; ordinary for sustained agentic work:</p>
+<ul>
+  <li><span class="key">Keep it warm</span> &mdash; one keep-alive read of the prefix:
+  200,000 &times; $0.50/M = <strong>$0.10</strong>, and the clock resets for another hour.</li>
+  <li><span class="key">Let it expire</span> &mdash; the next message is a cache miss and
+  must rewrite the whole prefix: 200,000 &times; $10/M = <strong>$2.00</strong>.</li>
+</ul>
+<p>So a single lapse-and-rewrite on a 200K context costs about <strong>$2.00</strong>,
+versus roughly <strong>$0.10</strong> to have kept it alive &mdash; and bigger contexts
+scale that gap proportionally. Pinging once an hour to bridge a gap stays cheaper than one
+cold rewrite until you're idle for the better part of a day; past that, just let it go. The
+rule of thumb: <span class="key">don't let an active conversation's cache expire unless
+you're genuinely done with it for many hours</span> &mdash; it is cheaper to tap the cache
+and reset the timer than to pay to rebuild it an hour or two later.</p>
+
+<p class="seealso">(One caveat: this only helps if you intend to keep using the
+<em>same</em> conversation. If you're finished with it, let it expire &mdash; a brand-new
+session starts with a cold cache regardless.)</p>
+
+<h2>4. So how fast does this add up?</h2>
+
+<p>Caching keeps the per-message cost low, but sustained agentic work runs many turns across
+many sessions and several projects, and the totals climb fast. These are reference-value
+figures straight from the ledger (under a subscription login), across a mix of models:</p>
+
+<table>
+  <tr><th>Period</th><th class="num">Reference-value spend</th><th>Notes</th></tr>
+  <tr><td>A quiet day (24 May)</td><td class="num">$1.89</td><td>A few short sessions &mdash; almost nothing</td></tr>
+  <tr><td>A heavy day (16 Jun)</td><td class="num">$827.05</td><td>The single biggest day on record</td></tr>
+  <tr><td>Last 7 days</td><td class="num">$2,567.04</td><td>35 sessions, 351 turns</td></tr>
+  <tr><td>Last 30 days</td><td class="num">$3,443.37</td><td>History back to 22 May</td></tr>
+</table>
+
+<p>One heavy day broke <strong>$800</strong> of reference value on its own. And notice where
+the money actually goes. Narrowing to just the Opus&nbsp;4.8 turns over the last 7 days (so a
+single set of rates applies) and decomposing by token type:</p>
+
+<table>
+  <tr><th>Token type</th><th class="num">Volume</th><th class="num">Rate / 1M</th><th class="num">Cost</th></tr>
+  <tr><td>Input (uncached)</td><td class="num">1,591,045</td><td class="num">$5.00</td><td class="num">$7.96</td></tr>
+  <tr><td>Output</td><td class="num">13,119,997</td><td class="num">$25.00</td><td class="num">$328.00</td></tr>
+  <tr><td>Cache write (1-hour)</td><td class="num">73,148,872</td><td class="num">$10.00</td><td class="num">$731.49</td></tr>
+  <tr><td>Cache read</td><td class="num">2,502,322,553</td><td class="num">$0.50</td><td class="num">$1,251.16</td></tr>
+  <tr class="total"><td>Total</td><td class="num"></td><td class="num"></td><td class="num">$2,318.61</td></tr>
+</table>
+
+<p>The headline: <span class="key">cache reads alone are $1,251 &mdash; more than half the
+Opus bill for the week</span> &mdash; even though, per token, they're the cheapest thing on
+the menu. There were simply <strong>2.5&nbsp;billion</strong> of them. That is the same fact
+as section 3 seen from the billing side: the context is read back over and over, and the only
+reason 2.5&nbsp;billion token-reads cost $1,251 instead of ~$25,000 is that they were
+<em>cache hits at $0.50/M, not rewrites at $10/M</em>. Uncached input, by contrast, is a
+rounding error ($7.96). Keep the cache warm and this is the column you're protecting.</p>
+
+<h2>5. So what does it actually cost to serve?</h2>
+
+<div class="turn you">
+  <p class="who">Prompt</p>
+  <p>OK &mdash; quite surprising. Now I see why there's so much discussion about Anthropic
+  losing money on subscription plans. What is the estimated cost of goods sold to process
+  the tokens, i.e., compute and power?</p></div>
+
+<p>Heavy caveat first: these are order-of-magnitude estimates with wide error bars.
+Providers don't publish serving costs, and the real figure moves with batch size,
+hardware utilization, GPU generation, and electricity contracts. Treat the numbers as
+&ldquo;which power of ten,&rdquo; not precision.</p>
+
+<p>The idea that matters: <span class="key">not all tokens cost the same to serve.</span>
+Decode (output) is the expensive part &mdash; it is sequential and memory-bandwidth bound.
+Prefill (input), cache writes, and especially cache reads are far cheaper; a cache read is
+essentially a memory fetch with almost no compute. A rough, all-in serving cost
+&mdash; including amortized GPU hardware, not just electricity &mdash; applied to one of the
+lighter days ($0.71 of reference value):</p>
+
+<table>
+  <tr><th>Category</th><th class="num">Tokens</th><th class="num">Est. cost rate</th><th class="num">Est. cost</th></tr>
+  <tr><td>Output</td><td class="num">7,686</td><td class="num">~$2&ndash;10 / M</td><td class="num">~$0.02&ndash;0.08</td></tr>
+  <tr><td>Input (prefill)</td><td class="num">14,111</td><td class="num">~$0.1&ndash;0.5 / M</td><td class="num">~$0.00</td></tr>
+  <tr><td>Cache write</td><td class="num">26,671</td><td class="num">~$0.1&ndash;0.5 / M</td><td class="num">~$0.01</td></tr>
+  <tr><td>Cache read</td><td class="num">354,346</td><td class="num">~$0.02&ndash;0.1 / M</td><td class="num">~$0.01&ndash;0.04</td></tr>
+  <tr class="total"><td>Total</td><td class="num"></td><td class="num"></td><td class="num">~$0.05&ndash;0.15</td></tr>
+</table>
+
+<p>So serving a <span class="key">$0.71 reference-value</span> day plausibly costs the
+provider somewhere around <span class="key">5&ndash;15 cents</span> in compute, power, and
+hardware amortization &mdash; on the order of 10&ndash;20% of the API-equivalent price,
+implying a healthy gross margin on API list rates.</p>
+
+<p>Where the floor comes from: an 8-GPU serving node draws roughly 10&nbsp;kW. With batching
+it might emit on the order of 1,000&ndash;2,000 output tokens per second across all
+concurrent requests. That works out to only about <span class="key">$0.10&ndash;0.30 of
+electricity per million output tokens.</span> Serving cost lands higher than that purely
+because of GPU capital amortization and real-world utilization well below 100% &mdash; not
+because of the electrons.</p>
+
+<h3>Then why the &ldquo;losing money on subscriptions&rdquo; talk?</h3>
+<p>That debate is <em>not</em> cost-versus-retail &mdash; as the table shows, API list
+prices sit comfortably above serving cost. It's <span class="key">flat-fee versus
+retail-value</span>:</p>
+<ul>
+  <li>A subscription is a flat monthly fee. A $20/month plan is roughly $0.67/day.</li>
+  <li>A heavy user can easily generate hundreds of dollars of <em>reference value</em>
+  per day &mdash; the $827 single-day figure above is on a subscription login, not an API
+  bill.</li>
+  <li>At that point the subscriber consumes far more retail-equivalent value than the flat
+  fee covers. The provider may still be <em>above</em> serving cost &mdash; it costs cents on
+  the dollar &mdash; but <em>below</em> the API price they'd otherwise charge. So it's a loss
+  against API revenue, not necessarily a cash loss on compute.</li>
+</ul>
+<p>That's exactly why this ledger labels cost as <span class="key">&ldquo;reference
+value&rdquo;</span> under a subscription login: it measures what the tokens <em>would</em>
+cost at API rates &mdash; the right yardstick for the subscription-economics question
+&mdash; not the provider's actual serving cost and not the user's flat fee.</p>
+
+<h3>The limit of that nuance: my own usage</h3>
+<p>That last clause &mdash; <em>not necessarily a cash loss</em> &mdash; holds for ordinary
+heavy use. My own usage crossed it on both plans I've held. I started on the $20 tier and
+upgraded to $100 (its rate limits run about 5&times; the $20 tier's) at mid-afternoon on
+12 June; splitting the ledger at that exact moment:</p>
+
+<table>
+  <tr><th>Period</th><th>Plan</th><th class="num">Active days</th><th class="num">Reference value</th><th class="num">Est. COGS to serve</th></tr>
+  <tr><td>22 May &ndash; 12 Jun</td><td>$20/mo</td><td class="num">13</td><td class="num">$1,035</td><td class="num">$39&ndash;193</td></tr>
+  <tr><td>12 Jun &ndash; now</td><td>$100/mo</td><td class="num">7</td><td class="num">$2,422</td><td class="num">$86&ndash;430</td></tr>
+</table>
+
+<p>Even on the $20 plan I was deep underwater: ~$1,035 of reference value and an estimated
+<strong>$39&ndash;193</strong> of real compute over three weeks &mdash; against roughly $14 of
+fees for that span. Upgrading didn't fix the arithmetic; it raised the ceiling. The 5&times;
+limits let me more than quadruple my daily burn ($80 &rarr; $346 of reference value per active
+day), and a single week ran <strong>$86&ndash;430</strong> of compute against ~$23 of prorated
+fee. At both tiers the serving cost alone runs several times &mdash; up to ~20&times; &mdash;
+what I actually pay. The higher plan didn't make me profitable to serve; it just enlarged the
+loss.</p>
+
+<p>And it isn't only Anthropic. Microsoft is in the same boat with GitHub Copilot &mdash;
+GPT-5-class tokens cost on the same order as Opus tokens, so the flat-fee math doesn't close
+on either side. The strain shows: as of this writing, every paid Copilot plan greets new
+users with <em>&ldquo;We're gradually enabling new sign-ups. If you're unable to sign up
+right now, please check back soon&rdquo;</em> &mdash; rationing access rather than selling
+unlimited use. Flat-rate plans inevitably grow usage caps, premium-request quotas, or sign-up
+throttles, because the per-token economics underneath don't close.</p>
+
+<p class="seealso">Companion piece:
+<a href="now-lets-talk-about-limits.html">&ldquo;Now Let's Talk About Limits&rdquo;</a> &mdash;
+the rate-limit side of the same story: what the 5-hour and weekly caps actually count, and why
+cached context is nearly free against them.</p>
+
+</div>
+</body>
+</html>

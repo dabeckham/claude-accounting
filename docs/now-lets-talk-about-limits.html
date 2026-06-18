@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Now Let's Talk About Limits</title>
+<style>
+  :root{
+    --bg:#f7f7f5; --card:#ffffff; --ink:#1f2328; --muted:#656d76;
+    --line:#e3e3df; --accent:#3a52b0; --accent-soft:#eaeefb;
+    --code-bg:#1f2328; --code-ink:#e6edf3; --you:#eef4fb; --you-line:#c7dcf2;
+    --tldr:#eef6ee; --tldr-line:#bfe0bf; --good:#1f7a4d; --bad:#c0392b;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:820px; margin:0 auto; padding:48px 22px 96px}
+  header.doc{border-bottom:2px solid var(--accent); padding-bottom:22px; margin-bottom:28px}
+  .kicker{font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:700; margin:0 0 10px}
+  h1{font-size:30px; line-height:1.2; margin:0 0 10px; letter-spacing:-.01em}
+  .byline{font-size:14px; color:var(--muted); margin:0 0 14px}
+  .byline strong{color:var(--ink)}
+  .sub{color:var(--muted); font-size:15.5px; margin:0; max-width:62ch}
+  h2{font-size:21px; margin:44px 0 14px; padding-top:8px; letter-spacing:-.01em}
+  h3{font-size:16px; margin:28px 0 8px; color:var(--accent)}
+  p{margin:0 0 14px}
+  .tldr{background:var(--tldr); border:1px solid var(--tldr-line); border-radius:12px; padding:18px 22px; margin:0 0 30px}
+  .tldr h2{margin:0 0 8px; padding:0; font-size:13px; letter-spacing:.12em; text-transform:uppercase; color:#2f6b2f}
+  .tldr ul{margin:0; padding-left:20px}
+  .tldr li{margin:5px 0}
+  pre{background:var(--code-bg); color:var(--code-ink); border-radius:10px; padding:16px 18px; overflow-x:auto;
+    font:13px/1.5 "SF Mono",ui-monospace,"Cascadia Code",Consolas,monospace; margin:14px 0;}
+  code{font:13.5px/1.4 "SF Mono",ui-monospace,"Cascadia Code",Consolas,monospace; background:var(--accent-soft); color:#2b3d86; padding:1px 5px; border-radius:5px}
+  pre code{background:none; color:inherit; padding:0}
+  table{border-collapse:collapse; width:100%; margin:16px 0; font-size:14.5px; background:var(--card); border-radius:10px; overflow:hidden}
+  th,td{border:1px solid var(--line); padding:9px 12px; text-align:left; vertical-align:top}
+  th{background:#eef0f6; font-weight:650}
+  td.num,th.num{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap}
+  tr.total td{font-weight:700; background:#f4f6fc}
+  .callout{background:var(--accent-soft); border-left:4px solid var(--accent); border-radius:0 8px 8px 0; padding:14px 18px; margin:18px 0}
+  .callout p:last-child{margin-bottom:0}
+  .key{font-weight:650}
+  .yes{color:var(--good); font-weight:700}
+  .no{color:var(--bad); font-weight:700}
+  .meter{display:flex; align-items:center; gap:10px; margin:8px 0; font-size:14px}
+  .meter .label{width:150px; color:var(--muted)}
+  .bar{flex:1; height:12px; background:#e7e9ef; border-radius:6px; overflow:hidden}
+  .bar span{display:block; height:100%; background:var(--accent); border-radius:6px}
+  .meter .pct{width:42px; text-align:right; font-variant-numeric:tabular-nums; font-weight:650}
+  .seealso{font-size:13.5px; color:var(--muted); margin-top:24px}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <p class="kicker">Field notes &middot; Claude usage limits</p>
+  <h1>Now Let's Talk About Limits</h1>
+  <p class="byline">By <strong>Don Beckham</strong> &middot; 18 June 2026</p>
+  <p class="sub">A companion to the token-accounting write-up. The dollar cost of a session is
+  one thing; the <em>rate limit</em> is another &mdash; a separate meter with its own rules.
+  Here's what Claude's 5-hour and weekly limits actually count, reverse-engineered from my own
+  usage, and why a giant cached context barely touches them.</p>
+</header>
+
+<div class="tldr">
+  <h2>TL;DR</h2>
+  <ul>
+    <li>There are two meters: a <strong>5-hour rolling window</strong> and a <strong>weekly
+    cap</strong>. They're separate from billing entirely.</li>
+    <li>They count <strong>only fresh input + output tokens</strong>. Cache reads <em>and</em>
+    cache writes are essentially free against the limit &mdash; the opposite of what you'd guess.</li>
+    <li>Reverse-engineered ceilings (input+output tokens): <strong>$20 plan ≈ 660K / 5h</strong>;
+    <strong>Max5 ≈ 3.6M / 5h</strong> (≈ 5×); <strong>Max5 weekly ≈ 43M</strong>.</li>
+    <li>So the <em>weekly</em> cap (~12 maxed 5-hour windows), not the 5-hour one, is the real
+    ceiling for sustained work &mdash; and output volume is what burns it, not big context.</li>
+    <li>Consequence: a user who lives at the weekly cap costs Anthropic an estimated
+    <strong>$1,000&ndash;5,000/month in compute</strong> against the <strong>$100</strong> they
+    pay &mdash; because the cap throttles throughput, not the cache cost underneath.</li>
+  </ul>
+</div>
+
+<h2>1. Two bars, and what they look like</h2>
+
+<p>Claude Code shows two usage meters. Right now, mid-morning, mine read:</p>
+
+<div class="callout">
+  <div class="meter"><span class="label">5-hour limit</span><span class="bar"><span style="width:5%"></span></span><span class="pct">5%</span></div>
+  <div class="meter"><span class="label">Weekly · all models</span><span class="bar"><span style="width:16%"></span></span><span class="pct">16%</span></div>
+  <p style="margin:6px 0 0; font-size:13px; color:var(--muted)">5-hour resets 10:39 AM &middot; weekly resets in five days.</p>
+</div>
+
+<p>The 5-hour window is rolling: it starts with your first message and resets five hours later
+(mine began at 5:39 AM). The weekly cap spans seven days across all models. Both are about
+<em>throughput</em>, not money &mdash; you can be nowhere near your dollar-equivalent value and
+still hit a wall, or vice-versa.</p>
+
+<h2>2. The surprise: cache traffic is free against the limit</h2>
+
+<p>The instinct is that everything you send counts. It doesn't. At the moment that 5-hour bar
+read <strong>5%</strong>, here's what my window had actually consumed:</p>
+
+<pre><code>input + output tokens (fresh) :    ~180,000
+cache-read tokens            : 11,670,000
+</code></pre>
+
+<p>I had streamed <strong>11.7 million</strong> cached tokens through the model that window and
+the bar barely moved &mdash; because only the <strong>~180K of fresh input + output</strong>
+counted. Working backward, <span class="key">5% = ~180K ⟹ a ceiling around 3.6M.</span></p>
+
+<p>To be sure it's input+output and not something else, I checked each candidate metric against
+a hard fact: <em>I have never once hit the 5-hour wall on Max5.</em> So my heaviest-ever 5-hour
+window must come in <em>under</em> 100% on the correct metric:</p>
+
+<table>
+  <tr><th>What the meter might count</th><th class="num">Implied 5h ceiling</th><th class="num">My heaviest window</th><th>Fits "never hit it"?</th></tr>
+  <tr><td>Input + output only</td><td class="num">~3.6M</td><td class="num">2.43M (67%)</td><td><span class="yes">✓ yes</span></td></tr>
+  <tr><td>&hellip; plus cache writes</td><td class="num">7.5M</td><td class="num">19.65M (262%)</td><td><span class="no">✗ no</span></td></tr>
+  <tr><td>&hellip; plus cache reads</td><td class="num">~233M</td><td class="num">billions</td><td><span class="no">✗ no</span></td></tr>
+</table>
+
+<p>Only the first survives. <span class="key">The limit counts fresh input and output; cache
+reads and cache writes are effectively free against it.</span> That's a real practical gift: a
+huge, warm context is cheap in dollars (cache reads bill at a tenth of input) <em>and</em> costs
+you almost nothing on the rate meter. What burns the meter is <strong>generating output</strong>
+and sending genuinely new, uncached input.</p>
+
+<h2>3. The ceilings &mdash; and the 5&times; checks out</h2>
+
+<p>I held the $20 plan before upgrading to Max5 ($100) on 12 June. Splitting my history at that
+moment and looking at peak 5-hour input+output:</p>
+
+<table>
+  <tr><th>Plan</th><th class="num">5-hour ceiling (in+out)</th><th class="num">My peak window</th><th>Hit the wall?</th></tr>
+  <tr><td>$20</td><td class="num">~660K</td><td class="num">663K</td><td><span class="bad">yes &mdash; dead-on</span></td></tr>
+  <tr><td>Max5 ($100)</td><td class="num">~3.6M</td><td class="num">2.43M (67%)</td><td><span class="good">no &mdash; 2/3 of the way</span></td></tr>
+</table>
+
+<p>On the $20 plan my busiest five hours topped out at <strong>663K</strong> input+output and
+I hit the limit dead-on &mdash; so the ceiling is ~660K. Max5's ~3.6M is <strong>5.4&times;</strong>
+that, almost exactly the advertised 5&times; rate-limit bump. And since my single heaviest
+window ever only reached <strong>67%</strong> of the Max5 ceiling, it explains cleanly why I've
+never hit the 5-hour wall on the bigger plan.</p>
+
+<h3>The weekly cap is the real ceiling</h3>
+<p>The same calibration on the weekly bar: <strong>6.9M input+output = 16% ⟹ ~43M per week.</strong>
+That's only about <strong>12&times;</strong> the 5-hour ceiling, not the ~34 five-hour windows a
+week actually contains. In other words you <em>can't</em> run every five-hour window at the
+max all week &mdash; the weekly limit, not the 5-hour, is what ultimately paces sustained work.</p>
+
+<h3>What living at the weekly cap costs the provider</h3>
+<p>That cap sounds like it protects Anthropic. It mostly doesn't &mdash; because the expensive
+part, cache traffic, rides along <em>uncapped</em>. The limit throttles fresh input+output, but
+each of those tokens drags a large cached context with it, and that's where the cost actually
+is. Anchored to my live reading: reaching just this week's <strong>16%</strong> has already
+generated about <strong>$1,044</strong> of reference value (~$37&ndash;186 of real compute).
+Scaled to the full cap, and to a user who lives there every week:</p>
+
+<table>
+  <tr><th></th><th class="num">This week @ 16%</th><th class="num">A maxed week</th><th class="num">Sustained / month</th></tr>
+  <tr><td>Reference value</td><td class="num">$1,044</td><td class="num">~$6,500</td><td class="num">~$28,000</td></tr>
+  <tr><td>Est. COGS to serve</td><td class="num">$37&ndash;186</td><td class="num">$230&ndash;1,165</td><td class="num">$1,010&ndash;5,050</td></tr>
+  <tr><td>Fee collected</td><td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">$100</td></tr>
+</table>
+
+<p>A user who consistently maxes the weekly limit costs Anthropic an estimated
+<strong>$1,000&ndash;5,000 a month in raw compute</strong> against the <strong>$100</strong> they
+pay &mdash; a structural four-figure monthly loss, on roughly <strong>$28,000</strong> of
+API-equivalent value. And the limit doesn't prevent it: it caps <em>throughput</em>, not the
+cache-driven serving cost underneath. That's the real reason these caps exist at all &mdash; and
+why they keep tightening.</p>
+
+<h2>4. The Fable subplot</h2>
+
+<p>The cleanest way to see the limit bite is to follow my Fable&nbsp;5 usage &mdash; the priciest,
+highest-throughput model I had. Fable shows up in my ledger for exactly three days:
+<strong>10&ndash;12 June</strong>, about 3M new tokens and ~$245 of reference value per day, then
+nothing. The last Fable turn is stamped <strong>12 June, 5:06 PM</strong> &mdash; because at
+5:21 that afternoon, two hours after I upgraded, Fable was pulled (added to the export-ban list)
+and simply vanished from my options.</p>
+
+<p>Those three Fable days are exactly when I kept slamming into the $20 five-hour wall: a
+high-output model against a ~660K ceiling fills it fast. The upgrade handed me 5&times; the room
+two hours before the model it would've fed disappeared anyway &mdash; timing I still find funny.</p>
+
+<h2>5. How I worked it out</h2>
+
+<p>No documentation needed &mdash; just the ledger and the percentage bar. Read the bar at a known
+moment, measure the input+output tokens consumed in that exact window from the ledger, and divide:
+<code>tokens &divide; percentage = ceiling</code>. Then sanity-check against an independent fact (the
+windows I <em>did</em> and <em>didn't</em> hit), and confirm the plan ratio lands near 5&times;.
+Three numbers, cross-checked, and the meter gives up its rules.</p>
+
+<p class="seealso">Companion piece: <a href="token-accounting-conversation.html">&ldquo;Why a Tiny Reply &lsquo;Costs&rsquo; 54,000 Tokens&rdquo;</a>
+&mdash; the dollar side of the same story, where prompt caching makes the tokens cheap. Here we
+saw the other half: that same cached context is nearly free against your rate limit too.</p>
+
+</div>
+</body>
+</html>
