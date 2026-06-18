@@ -20,6 +20,9 @@ Writes nothing to stdout so it never injects context or blocks a turn.
 """
 import sys, json, time, os, re
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import timelog_core as core
+
 cat = sys.argv[1] if len(sys.argv) > 1 else "event"
 ledger = os.path.join(os.path.expanduser("~"), ".claude", "time-tracking", "timelog.jsonl")
 os.makedirs(os.path.dirname(ledger), exist_ok=True)
@@ -37,33 +40,6 @@ desc = ""
 rec = {"kind": "event", "epoch": int(time.time()),
        "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
        "category": cat, "session": sess, "project": proj, "desc": desc}
-
-
-def _price_turn(r):
-    """Best-effort: stamp a turn's cost using the pricing schedule in effect TODAY
-    (the immutable 'Actual' spend). Returns (cost_usd, pricing_from) or (None, None)
-    on any problem — never blocks logging. Reports re-derive a 'Today' column from
-    the current schedule; this locks in what the turn cost at the time."""
-    try:
-        pf = os.path.join(os.path.expanduser("~"), ".claude", "time-tracking", "pricing.json")
-        P = json.load(open(pf, encoding="utf-8"))
-        scheds = P.get("schedules") or []
-        if not scheds:
-            return (None, None)
-        today = time.strftime("%Y-%m-%d")
-        elig = [s for s in scheds if s.get("effective_from", "") <= today] or scheds
-        sched = max(elig, key=lambda s: s.get("effective_from", ""))
-        rates = (sched.get("models") or {}).get(r.get("model", ""), sched.get("default") or {})
-        cost = (
-            r.get("in_tokens", 0)      * rates.get("input", 0)
-          + r.get("out_tokens", 0)     * rates.get("output", 0)
-          + r.get("cache_read", 0)     * rates.get("cache_read", 0)
-          + r.get("cache_write_5m", 0) * rates.get("cache_write_5m", 0)
-          + r.get("cache_write_1h", 0) * rates.get("cache_write_1h", 0)
-        ) / 1_000_000.0
-        return (round(cost, 6), sched.get("effective_from"))
-    except Exception:
-        return (None, None)
 
 
 if cat == "prompt":
@@ -143,63 +119,13 @@ elif cat == "turn_end":
                     rows.append(json.loads(l))
                 except Exception:
                     pass
-            start = 0
-            for i in range(len(rows) - 1, -1, -1):
-                e = rows[i]
-                if e.get("type") == "user" and "toolUseResult" not in e:
-                    start = i
-                    break
-            tin = tout = tcr = cw5 = cw1 = cc_total = ws = wf = nmsg = 0
-            models, thinking = set(), False
-
-            def _accum(d):
-                # Add one usage-like dict's token counts to the running totals.
-                global tin, tout, tcr, cw5, cw1, cc_total
-                tin += d.get("input_tokens", 0) or 0
-                tout += d.get("output_tokens", 0) or 0
-                tcr += d.get("cache_read_input_tokens", 0) or 0
-                cc_total += d.get("cache_creation_input_tokens", 0) or 0
-                cc = d.get("cache_creation") or {}
-                cw5 += cc.get("ephemeral_5m_input_tokens", 0) or 0
-                cw1 += cc.get("ephemeral_1h_input_tokens", 0) or 0
-
-            for e in rows[start:]:
-                if e.get("type") != "assistant":
-                    continue
-                m = e.get("message", {}) or {}
-                if m.get("model"):
-                    models.add(m["model"])
-                u = m.get("usage", {}) or {}
-                iters = u.get("iterations")
-                if iters:
-                    for it in iters:
-                        _accum(it)
-                else:
-                    _accum(u)
-                stu = u.get("server_tool_use", {}) or {}
-                ws += stu.get("web_search_requests", 0) or 0
-                wf += stu.get("web_fetch_requests", 0) or 0
-                for c in (m.get("content") or []):
-                    if isinstance(c, dict) and c.get("type") == "thinking":
-                        thinking = True
-                nmsg += 1
-            # If the split buckets are empty but a total was reported, attribute it
-            # to the 5-minute bucket (the default cache TTL) so cost isn't undercounted.
-            if cw5 == 0 and cw1 == 0 and cc_total > 0:
-                cw5 = cc_total
-            models.discard("<synthetic>")
-            rec["model"] = sorted(models)[0] if len(models) == 1 else ",".join(sorted(models))
-            rec["in_tokens"] = tin
-            rec["out_tokens"] = tout
-            rec["cache_read"] = tcr
-            rec["cache_write_5m"] = cw5
-            rec["cache_write_1h"] = cw1
-            rec["web_search"] = ws
-            rec["web_fetch"] = wf
-            rec["used_thinking"] = thinking
-            rec["msgs"] = nmsg
+            # Sum the just-finished turn (last prompt boundary -> end) via the
+            # shared summarizer, so the live hook and the historical backfill count
+            # a turn the exact same way.
+            start = core.last_turn_start(rows)
+            rec.update(core.summarize_turn(rows[start:]))
             # Lock in the cost at the prices in effect today (immutable Actual spend).
-            c, pfrom = _price_turn(rec)
+            c, pfrom = core.price_turn(rec)
             if c is not None:
                 rec["cost_usd"] = c
                 rec["pricing_from"] = pfrom
