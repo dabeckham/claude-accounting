@@ -1,0 +1,134 @@
+#!/usr/bin/env python
+"""Shared turn-accounting logic for the time-tracking ledger.
+
+This is the single source of truth for *how a turn's token usage is summed and
+priced*. Both the live Stop hook (`timelog-hook.py`) and the historical backfill
+(`backfill-from-transcripts.py`) import it, so a reconstructed turn is counted
+byte-for-byte the same way the hook counted it live.
+
+A "turn" is the slice of a transcript from one real user prompt up to (but not
+including) the next. A real user prompt is an entry with type == "user" that does
+NOT carry a "toolUseResult" key (tool-result messages also have type "user").
+Usage is summed over the *assistant* messages in that slice, preferring the
+per-message `usage.iterations` array when present (it already de-duplicates the
+streaming snapshots that otherwise inflate the counts).
+"""
+import os, json, time
+
+
+def is_prompt_boundary(entry):
+    """True if `entry` is a real user prompt (a turn boundary), not a tool result."""
+    return entry.get("type") == "user" and "toolUseResult" not in entry
+
+
+def last_turn_start(rows):
+    """Index of the last real user prompt in `rows` (0 if none). This is the
+    boundary the live Stop hook uses when it sums the just-finished turn."""
+    for i in range(len(rows) - 1, -1, -1):
+        if is_prompt_boundary(rows[i]):
+            return i
+    return 0
+
+
+def iter_turn_slices(rows):
+    """Yield (start, end) index pairs, one per real user prompt, splitting `rows`
+    into turns at every prompt boundary. The slice rows[start:end] holds the
+    prompt and the assistant messages that answered it."""
+    bounds = [i for i, e in enumerate(rows) if is_prompt_boundary(e)]
+    for j, start in enumerate(bounds):
+        end = bounds[j + 1] if j + 1 < len(bounds) else len(rows)
+        yield start, end
+
+
+def summarize_turn(turn_rows):
+    """Sum the usage of the assistant messages in one turn slice. Returns a dict
+    of the same token/model fields the live hook records (with `msgs` == 0 and an
+    empty model when the slice holds no assistant messages — callers that want to
+    drop empty turns should check `msgs`). Mirrors `_accum` in timelog-hook.py."""
+    tin = tout = tcr = cw5 = cw1 = cc_total = ws = wf = nmsg = 0
+    models, thinking = set(), False
+
+    def _accum(d):
+        nonlocal tin, tout, tcr, cw5, cw1, cc_total
+        tin += d.get("input_tokens", 0) or 0
+        tout += d.get("output_tokens", 0) or 0
+        tcr += d.get("cache_read_input_tokens", 0) or 0
+        cc_total += d.get("cache_creation_input_tokens", 0) or 0
+        cc = d.get("cache_creation") or {}
+        cw5 += cc.get("ephemeral_5m_input_tokens", 0) or 0
+        cw1 += cc.get("ephemeral_1h_input_tokens", 0) or 0
+
+    for e in turn_rows:
+        if e.get("type") != "assistant":
+            continue
+        m = e.get("message", {}) or {}
+        if m.get("model"):
+            models.add(m["model"])
+        u = m.get("usage", {}) or {}
+        iters = u.get("iterations")
+        if iters:
+            for it in iters:
+                _accum(it)
+        else:
+            _accum(u)
+        stu = u.get("server_tool_use", {}) or {}
+        ws += stu.get("web_search_requests", 0) or 0
+        wf += stu.get("web_fetch_requests", 0) or 0
+        for c in (m.get("content") or []):
+            if isinstance(c, dict) and c.get("type") == "thinking":
+                thinking = True
+        nmsg += 1
+
+    # If the split buckets are empty but a total was reported, attribute it to the
+    # 5-minute bucket (the default cache TTL) so cost isn't undercounted.
+    if cw5 == 0 and cw1 == 0 and cc_total > 0:
+        cw5 = cc_total
+    models.discard("<synthetic>")
+    return {
+        "model": sorted(models)[0] if len(models) == 1 else ",".join(sorted(models)),
+        "in_tokens": tin,
+        "out_tokens": tout,
+        "cache_read": tcr,
+        "cache_write_5m": cw5,
+        "cache_write_1h": cw1,
+        "web_search": ws,
+        "web_fetch": wf,
+        "used_thinking": thinking,
+        "msgs": nmsg,
+    }
+
+
+def load_schedules(pricing_path=None):
+    """Return the pricing schedules sorted ascending by effective_from ([] on error)."""
+    pricing_path = pricing_path or os.path.join(
+        os.path.expanduser("~"), ".claude", "time-tracking", "pricing.json")
+    try:
+        P = json.load(open(pricing_path, encoding="utf-8"))
+        return sorted(P.get("schedules", []), key=lambda s: s.get("effective_from", ""))
+    except Exception:
+        return []
+
+
+def price_turn(rec, schedules=None, date_str=None, pricing_path=None):
+    """Stamp a turn's cost using the pricing schedule in effect on `date_str`
+    (default today). Returns (cost_usd, pricing_from) or (None, None) on any
+    problem — never raises. This is the immutable 'Actual' spend locked in at the
+    prices that applied on the turn's own date."""
+    try:
+        scheds = schedules if schedules is not None else load_schedules(pricing_path)
+        if not scheds:
+            return (None, None)
+        date_str = date_str or time.strftime("%Y-%m-%d")
+        elig = [s for s in scheds if s.get("effective_from", "") <= date_str] or scheds
+        sched = max(elig, key=lambda s: s.get("effective_from", ""))
+        rates = (sched.get("models") or {}).get(rec.get("model", ""), sched.get("default") or {})
+        cost = (
+            rec.get("in_tokens", 0)      * rates.get("input", 0)
+          + rec.get("out_tokens", 0)     * rates.get("output", 0)
+          + rec.get("cache_read", 0)     * rates.get("cache_read", 0)
+          + rec.get("cache_write_5m", 0) * rates.get("cache_write_5m", 0)
+          + rec.get("cache_write_1h", 0) * rates.get("cache_write_1h", 0)
+        ) / 1_000_000.0
+        return (round(cost, 6), sched.get("effective_from"))
+    except Exception:
+        return (None, None)

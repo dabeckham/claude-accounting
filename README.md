@@ -129,6 +129,8 @@ claude-accounting/
 │   ├── timelog.sh                ← agent/CLI helper: now | event | interval | view | today | cost
 │   ├── timelog-hook.sh           ← hook entry point (forwards stdin to the .py)
 │   ├── timelog-hook.py           ← appends events; parses transcript tail for tokens/model; parses effort tag
+│   ├── timelog_core.py           ← shared turn summing + pricing (imported by the hook AND the backfill)
+│   ├── backfill-from-transcripts.py ← reconstruct historical turn_end events from old transcripts
 │   └── timelog-report.py         ← deterministic report generator (engine behind /accounting)
 ├── config/
 │   ├── pricing.json              ← dated pricing schedules (append a new one when rates change)
@@ -139,6 +141,7 @@ claude-accounting/
     ├── SCHEMA.md                 ← the JSONL ledger schema + conventions
     ├── HOOKS.md                  ← how the three hooks work + the transcript-parsing approach
     ├── COST.md                   ← cost derivation + pricing/cache-rate details
+    ├── BACKFILL.md               ← reconstructing history from old transcripts (method + the verify gate)
     ├── EFFORT.md                 ← why effort can't be auto-detected; in-band tagging; the relay option
     └── AGENT_INSTRUCTIONS.md     ← the cross-session CLAUDE.md snippet
 ```
@@ -163,6 +166,25 @@ python ~/.claude/timelog-report.py all --billing
 It prints sessions & interactive time, a time breakdown (agent working time vs your idle/reading vs logged task intervals), cost (Actual + Today), token totals, and the effort mix — all computed deterministically from the ledger.
 
 > Slash commands register **at Claude Code startup**, so a freshly-installed `/accounting` only appears in a new session. Until then, run `timelog-report.py` directly.
+
+---
+
+## Backfilling history from old transcripts
+
+The hooks only start logging once installed, so days before that are blank. But Claude Code keeps full per‑message transcripts under `~/.claude/projects/**/*.jsonl` going back weeks, and every assistant message carries the model + token usage needed to rebuild a turn. **`backfill-from-transcripts.py`** replays those transcripts and appends one reconstructed `turn_end` per turn.
+
+The catch is that a *naive* per‑message sum doesn't reconcile — transcripts repeat streaming snapshots, so counting them over/under‑counts. The backfill therefore reuses the **exact same per‑turn summer the live hook uses** (`timelog_core.py`), so a reconstructed turn is counted byte‑for‑byte the way it would have been counted live.
+
+```sh
+python ~/.claude/backfill-from-transcripts.py --verify     # gate: reproduce known days to the cent
+python ~/.claude/backfill-from-transcripts.py --dry-run    # per-day deltas, writes nothing
+python ~/.claude/backfill-from-transcripts.py --apply      # back up the ledger, then append
+```
+
+- **`--verify` is the gate.** It re‑derives the turns the live hook already recorded and confirms they match **to the cent** before you trust the method. (One legacy row — the very first turn ever logged, written by a pre‑`cache_write` hook revision — is reported as a known exception.)
+- **No double counting.** De‑dup is by **local date**: any date that already has `turn_end` events is left completely untouched, so existing day totals never change. Re‑running `--apply` is idempotent. (Trade‑off: turns from *before* the hook went live on an already‑present date aren't recovered — the safe choice.)
+- **Provenance.** Every reconstructed row is stamped `reconstructed: true` and `source: "transcript-backfill"`, and priced with the schedule in effect **on the turn's own date**.
+- **Safety.** `--apply` writes a timestamped `timelog.jsonl.<ts>.bak` before appending.
 
 ---
 

@@ -49,6 +49,11 @@ Every line has: `kind`, `epoch`, `ts` (ISO8601 w/ tz offset), `category`,
   - **`session_start` events** carry `billing_mode` (`subscription | api_key |
     unknown`), detected from the auth method. Stored but NOT shown on cost reports
     unless asked (`cost --billing`).
+  - **Reconstructed `turn_end` events** (from the historical backfill) carry the
+    same fields plus `reconstructed: true` and `source: "transcript-backfill"`.
+    They're rebuilt from old transcripts by `backfill-from-transcripts.py`, which
+    reuses the live hook's own per-turn summer (`timelog_core.py`) so the counts
+    match what the hook would have logged. See [BACKFILL.md](BACKFILL.md).
 
 ### Cost — locked-in (Actual) vs present-day (Today)
 `pricing.json` holds **dated schedules** (`effective_from`); the schedule applied
