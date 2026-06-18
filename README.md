@@ -132,13 +132,34 @@ claude-accounting/
 ├── config/
 │   ├── pricing.json              ← dated pricing schedules (append a new one when rates change)
 │   └── settings.example.json     ← the hooks block to merge into ~/.claude/settings.json
-└── docs/
-    ├── SCHEMA.md                 ← the JSONL ledger schema + conventions
-    ├── HOOKS.md                  ← how the three hooks work + the transcript-parsing approach
-    ├── COST.md                   ← cost derivation + pricing/cache-rate details
-    ├── EFFORT.md                 ← why effort can't be auto-detected; in-band tagging; the relay option
-    └── AGENT_INSTRUCTIONS.md     ← the cross-session CLAUDE.md snippet
+├── docs/
+│   ├── SCHEMA.md                 ← the JSONL ledger schema + conventions
+│   ├── HOOKS.md                  ← how the three hooks work + the transcript-parsing approach
+│   ├── COST.md                   ← cost derivation + pricing/cache-rate details
+│   ├── EFFORT.md                 ← why effort can't be auto-detected; in-band tagging; the relay option
+│   └── AGENT_INSTRUCTIONS.md     ← the cross-session CLAUDE.md snippet
+└── skills/
+    └── accounting/               ← the /accounting reporting skill (copy into ~/.claude/skills/)
+        ├── SKILL.md
+        └── report.py             ← deterministic report generator
 ```
+
+## Reporting — the `/accounting` skill
+
+For a readable report instead of raw JSONL, install the skill and run it:
+
+```sh
+cp -r skills/accounting ~/.claude/skills/        # then restart Claude Code so /accounting registers
+```
+
+Invoke `/accounting [today|week|month|all|N]` in Claude Code, or run the generator directly:
+
+```sh
+python ~/.claude/skills/accounting/report.py week            # default
+python ~/.claude/skills/accounting/report.py all --billing
+```
+
+It prints sessions & interactive time, a time breakdown (agent working time vs your idle/reading vs logged task intervals), cost (Actual + Today), token totals, and the effort mix — all computed deterministically from the ledger.
 
 ---
 
