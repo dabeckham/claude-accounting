@@ -13,6 +13,9 @@ Usage:
 """
 import sys, os, json, time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import timelog_core as core
+
 HOME = os.path.expanduser("~")
 LEDGER = os.path.join(HOME, ".claude", "time-tracking", "timelog.jsonl")
 PRICING = os.path.join(HOME, ".claude", "time-tracking", "pricing.json")
@@ -60,7 +63,7 @@ def sched_for(scheds, date_str):
 def cost_with(sched, r):
     if not sched:
         return 0.0
-    rates = (sched.get("models") or {}).get(r.get("model", ""), sched.get("default") or {})
+    rates = core.rate_for(sched, r.get("model", ""))
     return (
         r.get("in_tokens", 0)      * rates.get("input", 0)
       + r.get("out_tokens", 0)     * rates.get("output", 0)

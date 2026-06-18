@@ -109,6 +109,23 @@ def load_schedules(pricing_path=None):
         return []
 
 
+def rate_for(sched, model):
+    """Return the per-million-token rate dict for `model` from one schedule.
+
+    Matches the exact model id first, then the LONGEST `models` key that is a
+    prefix of the id, then falls back to the schedule `default`. The prefix step
+    is what handles date-suffixed ids: the transcript reports
+    `claude-haiku-4-5-20251001` while the schedule is keyed `claude-haiku-4-5`,
+    and without it Haiku would silently fall through to the (Opus) default rate."""
+    models = sched.get("models") or {}
+    if model in models:
+        return models[model]
+    prefixes = [k for k in models if model.startswith(k)]
+    if prefixes:
+        return models[max(prefixes, key=len)]
+    return sched.get("default") or {}
+
+
 def price_turn(rec, schedules=None, date_str=None, pricing_path=None):
     """Stamp a turn's cost using the pricing schedule in effect on `date_str`
     (default today). Returns (cost_usd, pricing_from) or (None, None) on any
@@ -121,7 +138,7 @@ def price_turn(rec, schedules=None, date_str=None, pricing_path=None):
         date_str = date_str or time.strftime("%Y-%m-%d")
         elig = [s for s in scheds if s.get("effective_from", "") <= date_str] or scheds
         sched = max(elig, key=lambda s: s.get("effective_from", ""))
-        rates = (sched.get("models") or {}).get(rec.get("model", ""), sched.get("default") or {})
+        rates = rate_for(sched, rec.get("model", ""))
         cost = (
             rec.get("in_tokens", 0)      * rates.get("input", 0)
           + rec.get("out_tokens", 0)     * rates.get("output", 0)
