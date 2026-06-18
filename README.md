@@ -169,6 +169,17 @@ It prints sessions & interactive time, a time breakdown (agent working time vs y
 
 ---
 
+## Further reading — the economics behind the numbers
+
+Two self‑contained narrative write‑ups, dogfooded from this very ledger, explain *why* the numbers look the way they do:
+
+- **[Why a Tiny Reply "Costs" 54,000 Tokens](https://htmlpreview.github.io/?https://github.com/dabeckham/claude-accounting/blob/main/docs/token-accounting-conversation.html)** — how per‑turn token accounting actually works: every turn re‑sends the full context, prompt caching makes the reads cheap (a tenth of input price), what it costs to serve, and how fast subscription usage piles up. *(source: [`docs/token-accounting-conversation.html`](docs/token-accounting-conversation.html))*
+- **[Now Let's Talk About Limits](https://htmlpreview.github.io/?https://github.com/dabeckham/claude-accounting/blob/main/docs/now-lets-talk-about-limits.html)** — the 5‑hour and weekly rate limits reverse‑engineered from the ledger: what they actually count (fresh input + output, *not* cache), the per‑plan ceilings, and what a maxed‑out week costs to serve. *(source: [`docs/now-lets-talk-about-limits.html`](docs/now-lets-talk-about-limits.html))*
+
+> These are standalone HTML (inline styles, no dependencies); the links above render them via htmlpreview, or open the files in `docs/` locally.
+
+---
+
 ## Backfilling history from old transcripts
 
 The hooks only start logging once installed, so days before that are blank. But Claude Code keeps full per‑message transcripts under `~/.claude/projects/**/*.jsonl` going back weeks, and every assistant message carries the model + token usage needed to rebuild a turn. **`backfill-from-transcripts.py`** replays those transcripts and appends one reconstructed `turn_end` per turn.
