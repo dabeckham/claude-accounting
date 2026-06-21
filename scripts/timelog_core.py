@@ -149,3 +149,44 @@ def price_turn(rec, schedules=None, date_str=None, pricing_path=None):
         return (round(cost, 6), sched.get("effective_from"))
     except Exception:
         return (None, None)
+
+
+# --- Per-session effort carry-forward -------------------------------------
+# The effort/reasoning level can't be read from the API call or disk, so Don
+# tags it in-band ("effort=high"). An untagged prompt inherits the last tagged
+# level for the SAME session (Don moves between sessions constantly and their
+# effort differs), marked effort_certain=false. State lives in one small JSON
+# file keyed by the 8-char session id: { "3df7b1c9": "medium", ... }. Only
+# sessions Don has actually tagged get a key; a brand-new/untagged session has
+# no entry and stays unlabeled. The status-line script reads the same file.
+
+EFFORT_LEVELS = ("low", "medium", "high", "extra", "max", "ultracode")
+
+
+def effort_state_path():
+    return os.path.join(os.path.expanduser("~"), ".claude", ".timelog-last-effort.json")
+
+
+def _load_effort_state():
+    try:
+        with open(effort_state_path(), encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def read_session_effort(sess):
+    """Last tagged effort level for `sess`, or "" if the session was never tagged."""
+    return _load_effort_state().get(sess, "")
+
+
+def set_session_effort(sess, lvl):
+    """Record `lvl` as the last tagged effort for `sess` (best-effort, never raises)."""
+    try:
+        d = _load_effort_state()
+        d[sess] = lvl
+        with open(effort_state_path(), "w", encoding="utf-8") as f:
+            json.dump(d, f)
+    except Exception:
+        pass

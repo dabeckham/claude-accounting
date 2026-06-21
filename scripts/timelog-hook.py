@@ -48,26 +48,20 @@ if cat == "prompt":
     # In-band effort tag: Don writes "effort: high" (or =, levels per the Opus 4.8
     # desktop UI). Accurate because it's his own words — the value can't be read
     # from the API call or disk. "ultra" is accepted as an alias for ultracode.
-    # If no tag this turn, carry forward the last tagged level but mark it
-    # effort_certain=false, so reporting can tell tagged from assumed (Don: treat
-    # uncertain as accurate but distinguishable). No prior tag → no effort field.
-    state = os.path.join(os.path.expanduser("~"), ".claude", ".timelog-last-effort")
+    # If no tag this turn, carry forward the last tagged level FOR THIS SESSION
+    # (Don moves between sessions constantly and their effort differs), marked
+    # effort_certain=false so reporting can tell tagged from assumed. A session
+    # never tagged has no carry-forward and stays unlabeled. State is keyed by
+    # session id in timelog_core; the status-line script reads the same store.
     m = re.search(r"effort\s*[:=]\s*(low|medium|high|extra|max|ultracode|ultra)\b", text, re.I)
     if m:
         lvl = m.group(1).lower()
         lvl = "ultracode" if lvl == "ultra" else lvl
         rec["effort"] = lvl
         rec["effort_certain"] = True
-        try:
-            with open(state, "w", encoding="utf-8") as f:
-                f.write(lvl)
-        except Exception:
-            pass
+        core.set_session_effort(sess, lvl)
     else:
-        try:
-            last = open(state, encoding="utf-8").read().strip()
-        except Exception:
-            last = ""
+        last = core.read_session_effort(sess)
         if last:
             rec["effort"] = last
             rec["effort_certain"] = False
