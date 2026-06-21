@@ -76,12 +76,13 @@ Everything lands in **one append‑only JSONL ledger**. Single‑line appends ar
 1. **Copy the scripts and config** into your Claude config dir:
 
    ```sh
-   cp scripts/timelog.sh scripts/timelog-hook.sh scripts/timelog-hook.py ~/.claude/
+   cp scripts/timelog.sh scripts/timelog-hook.sh scripts/timelog-hook.py scripts/timelog_core.py \
+      scripts/timelog-statusline.sh scripts/timelog-statusline.py ~/.claude/
    mkdir -p ~/.claude/time-tracking
    cp config/pricing.json ~/.claude/time-tracking/
    ```
 
-2. **Wire the hooks** into `~/.claude/settings.json` (user‑level = all projects). Merge the `hooks` block from [`config/settings.example.json`](config/settings.example.json) into your existing settings. Hooks take effect on the **next** session start.
+2. **Wire the hooks** into `~/.claude/settings.json` (user‑level = all projects). Merge the `hooks` block from [`config/settings.example.json`](config/settings.example.json) into your existing settings — and optionally the `statusLine` block, which pins this session's current effort + model beneath the input box. Hooks take effect on the **next** session start.
 
 3. **(Optional) Add the cross‑session instruction** so every session feeds the ledger and honors the effort tag — see [`docs/AGENT_INSTRUCTIONS.md`](docs/AGENT_INSTRUCTIONS.md) for the snippet to drop into your global `~/.claude/CLAUDE.md`.
 
@@ -114,8 +115,9 @@ sh ~/.claude/timelog.sh cost all --billing          # also append the billing-ch
 The effort/reasoning level you pick in the Claude desktop UI is **not recoverable** from the transcript or disk (see [`docs/EFFORT.md`](docs/EFFORT.md) for the full investigation). The reliable capture is **in‑band**: write `effort: <level>` (or `effort=<level>`) anywhere in a message.
 
 - Levels (Opus 4.8 desktop UI): `low · medium · high · extra · max · ultracode` (`ultra` aliases `ultracode`).
-- A tag sets `effort` + `effort_certain: true` and is **remembered**; untagged messages **inherit** the last tagged level with `effort_certain: false` (assumed), so you don't retype it every turn.
+- A tag sets `effort` + `effort_certain: true` and is **remembered per session**; untagged messages **inherit that session's** last tagged level with `effort_certain: false` (assumed), so you don't retype it every turn. Carry‑forward is session‑scoped, so a tag in one session never bleeds into a different one.
 - No tag and no prior → no `effort` field (never guessed). Reports can treat "uncertain" as accurate while still distinguishing it from explicitly tagged turns.
+- A **status line** (optional) shows this session's current effort + model beneath the input box, e.g. `● Last effort: medium · Opus 4.8` — a live reminder of what untagged turns will inherit.
 
 ---
 
@@ -129,7 +131,9 @@ claude-accounting/
 │   ├── timelog.sh                ← agent/CLI helper: now | event | interval | view | today | cost
 │   ├── timelog-hook.sh           ← hook entry point (forwards stdin to the .py)
 │   ├── timelog-hook.py           ← appends events; parses transcript tail for tokens/model; parses effort tag
-│   ├── timelog_core.py           ← shared turn summing + pricing (imported by the hook AND the backfill)
+│   ├── timelog-statusline.sh     ← statusLine entry point (forwards stdin to the .py)
+│   ├── timelog-statusline.py     ← renders this session's last effort + model for the status bar
+│   ├── timelog_core.py           ← shared turn summing + pricing + per-session effort state (imported by the hook, statusline AND the backfill)
 │   ├── backfill-from-transcripts.py ← reconstruct historical turn_end events from old transcripts
 │   └── timelog-report.py         ← deterministic report generator (engine behind /accounting)
 ├── config/
