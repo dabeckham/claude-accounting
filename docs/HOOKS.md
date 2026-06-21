@@ -8,8 +8,6 @@ Claude Code fires user‑defined **hooks** at lifecycle points. This project wir
 | `UserPromptSubmit` | `prompt` | a `prompt` event; `desc` = a snippet of your message; parses an `effort:` tag (carry‑forward is **per session** — see [EFFORT.md](EFFORT.md)) |
 | `Stop` | `turn_end` | a `turn_end` event; parses the transcript tail for model + token usage |
 
-A fourth lifecycle point, **`statusLine`**, is wired to a *separate* script — see [Status line](#status-line) below.
-
 ## Why a wrapper script + a Python file
 
 The hook event JSON arrives on **stdin**. A naïve `python - <<'PY'` heredoc would hijack stdin (Python would read the *script* instead of the event), so `timelog-hook.sh` calls a real file:
@@ -37,29 +35,6 @@ Claude Code may pass `transcript_path` as a native Windows path (`C:\…`) or an
 ## Performance
 
 Each turn spawns one short‑lived `sh` + `python`. The `Stop` hook reads a bounded 2 MB tail, so cost stays roughly constant regardless of total transcript size. Append is a single `>>` write of one JSON line (<4 KB → atomic).
-
-## Status line
-
-Claude Code's **`statusLine`** config runs a command on every render and shows its
-stdout in a line beneath the input box. This project wires it to
-`timelog-statusline.sh` → `timelog-statusline.py`, which prints this session's
-current effort + model, e.g.:
-
-```
-● Last effort: medium · Opus 4.8
-```
-
-- The session id and `model.display_name` come from the statusLine payload on **stdin**.
-- The effort is read from the same per‑session map the `prompt` hook writes
-  (`~/.claude/.timelog-last-effort.json`), so it always reflects *this* session — an
-  unlabeled session shows a dim dot and `Last effort: —`.
-- The dot is colored by level via ANSI 256‑color codes; output is written as **UTF‑8
-  bytes** because the glyphs (`●`, `·`) don't exist in a Windows `cp1252` console.
-- It's pure display: nothing is sent to the model, nothing is appended to the ledger,
-  and it always exits `0` so it can't break the status bar.
-
-Wire it by adding a `statusLine` block to `~/.claude/settings.json` (see
-[`config/settings.example.json`](../config/settings.example.json)).
 
 ## Disabling / scoping
 

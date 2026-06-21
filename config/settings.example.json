@@ -23,11 +23,5 @@
         ]
       }
     ]
-  },
-  "_statusLine_comment": "Optional: shows this session's current effort + model beneath the input box, e.g. `● Last effort: medium · Opus 4.8`. Reads the per-session effort the prompt hook records. Same `~` → absolute MSYS path caveat as the hooks on Windows.",
-  "statusLine": {
-    "type": "command",
-    "command": "sh ~/.claude/timelog-statusline.sh",
-    "padding": 0
   }
 }
