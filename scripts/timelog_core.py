@@ -158,7 +158,7 @@ def price_turn(rec, schedules=None, date_str=None, pricing_path=None):
 # effort differs), marked effort_certain=false. State lives in one small JSON
 # file keyed by the 8-char session id: { "3df7b1c9": "medium", ... }. Only
 # sessions Don has actually tagged get a key; a brand-new/untagged session has
-# no entry and stays unlabeled. The status-line script reads the same file.
+# no entry and stays unlabeled.
 
 EFFORT_LEVELS = ("low", "medium", "high", "extra", "max", "ultracode")
 

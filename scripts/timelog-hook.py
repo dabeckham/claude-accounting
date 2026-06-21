@@ -52,7 +52,7 @@ if cat == "prompt":
     # (Don moves between sessions constantly and their effort differs), marked
     # effort_certain=false so reporting can tell tagged from assumed. A session
     # never tagged has no carry-forward and stays unlabeled. State is keyed by
-    # session id in timelog_core; the status-line script reads the same store.
+    # session id in timelog_core (~/.claude/.timelog-last-effort.json).
     m = re.search(r"effort\s*[:=]\s*(low|medium|high|extra|max|ultracode|ultra)\b", text, re.I)
     if m:
         lvl = m.group(1).lower()

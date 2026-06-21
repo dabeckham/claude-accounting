@@ -24,8 +24,11 @@ if you missed a start.
 
 **Effort:** the user captures reasoning effort in-band by writing `effort: <level>`
 in a message (low|medium|high|extra|max|ultracode). The prompt hook stamps it and
-carries it forward (uncertain) on untagged turns. Don't try to auto-detect it — it
-isn't readable from the API call or disk (see the project's docs/EFFORT.md).
+carries it forward **per session** (uncertain) on untagged turns. Don't try to
+auto-detect it — it isn't readable from the API call or disk (see the project's
+docs/EFFORT.md). **Echo it back:** make the last line of every reply `Effort: <Level>`
+(or `Effort: (untagged)`) so the current level stays visible — the most recent
+`effort=` tag seen in this session, carried forward.
 
 Views: `sh ~/.claude/timelog.sh today` | `view [N]` | `cost [today|all|N]`.
 ```

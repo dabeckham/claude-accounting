@@ -22,9 +22,9 @@ Because effort can't be read, the user supplies it in‑band — accurate becaus
 
 In reporting, treat `effort_certain: false` as accurate (the value held from the last explicit tag) but keep it distinguishable from explicitly tagged turns.
 
-## Status‑line reminder
+## Last‑line reminder (in‑band)
 
-Because the assumed level is easy to lose track of when you move between sessions, a Claude Code **statusLine** renders this session's current effort beneath the input box, e.g. `● Last effort: medium · Opus 4.8`. The dot is colored by level (green→magenta as effort rises); an unlabeled session shows a dim dot and `Last effort: —`. It's rendered by `timelog-statusline.py` (via `timelog-statusline.sh`), which reads the same per‑session map the hook writes — pure local display, never sent to the model and never written to the ledger. See [HOOKS.md](HOOKS.md#status-line).
+Because the assumed level is easy to lose track of when you move between sessions, the agent echoes it **in‑band**: the **last line** of every reply is `Effort: <Level>` (e.g. `Effort: Medium`), reflecting this session's current effort — the most recent `effort=` tag seen in the session, carried forward; an untagged session shows `Effort: (untagged)`. This is driven by a one‑line rule in the global `~/.claude/CLAUDE.md` (see [AGENT_INSTRUCTIONS.md](AGENT_INSTRUCTIONS.md)), so it works on every surface — including ones that don't render a Claude Code `statusLine`. It costs a few output tokens per turn; the ledger remains the source of truth for accounting.
 
 ## The relay option (automatic, but heavier — not enabled by default)
 
