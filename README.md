@@ -144,6 +144,7 @@ claude-accounting/
     ├── COST.md                   ← cost derivation + pricing/cache-rate details
     ├── BACKFILL.md               ← reconstructing history from old transcripts (method + the verify gate)
     ├── EFFORT.md                 ← why effort can't be auto-detected; in-band tagging; the relay option
+    ├── THINKING_REEMISSION.md    ← cost model for re-emitting a turn's hidden reasoning (ephemeral → persistent)
     └── AGENT_INSTRUCTIONS.md     ← the cross-session CLAUDE.md snippet
 ```
 
@@ -172,10 +173,11 @@ It prints sessions & interactive time, a time breakdown (agent working time vs y
 
 ## Further reading — the economics behind the numbers
 
-Two self‑contained narrative write‑ups, dogfooded from this very ledger, explain *why* the numbers look the way they do:
+Three self‑contained narrative write‑ups, dogfooded from this very ledger, explain *why* the numbers look the way they do:
 
 - **[Why a Tiny Reply "Costs" 54,000 Tokens](https://htmlpreview.github.io/?https://github.com/dabeckham/claude-accounting/blob/main/docs/token-accounting-conversation.html)** — how per‑turn token accounting actually works: every turn re‑sends the full context, prompt caching makes the reads cheap (a tenth of input price), what it costs to serve, and how fast subscription usage piles up. *(source: [`docs/token-accounting-conversation.html`](docs/token-accounting-conversation.html))*
 - **[Now Let's Talk About Limits](https://htmlpreview.github.io/?https://github.com/dabeckham/claude-accounting/blob/main/docs/now-lets-talk-about-limits.html)** — the 5‑hour and weekly rate limits reverse‑engineered from the ledger: what they actually count (fresh input + output, *not* cache), the per‑plan ceilings, and what a maxed‑out week costs to serve. *(source: [`docs/now-lets-talk-about-limits.html`](docs/now-lets-talk-about-limits.html))*
+- **[The Hidden Tokens You Can Just Ask For](https://htmlpreview.github.io/?https://github.com/dabeckham/claude-accounting/blob/main/docs/asking-for-the-hidden-tokens.html)** — chasing one odd word (`iff`) into the realization that a reasoning model's hidden thinking is still in context and can be recovered just by asking it to re‑emit — and what making that reasoning *persistent* costs on the ledger. *(source: [`docs/asking-for-the-hidden-tokens.html`](docs/asking-for-the-hidden-tokens.html); accounting companion: [`docs/THINKING_REEMISSION.md`](docs/THINKING_REEMISSION.md))*
 
 > These are standalone HTML (inline styles, no dependencies); the links above render them via htmlpreview, or open the files in `docs/` locally.
 

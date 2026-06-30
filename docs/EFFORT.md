@@ -37,3 +37,7 @@ Trade‑offs that keep this opt‑in:
 - It must be transparently pass‑through (streaming/tool‑use) or it breaks the app, so it needs careful hardening and a fresh‑session test.
 
 This is tracked as an open enhancement issue rather than shipped, because the in‑band tag already captures effort with zero infrastructure and no risk to the app.
+
+## See also
+
+A sibling "things that drive cost" topic: [THINKING_REEMISSION.md](THINKING_REEMISSION.md) — the economics of *re‑emitting* a turn's hidden reasoning into the visible reply (ephemeral → persistent), and why it's a deliberate switch rather than a default.

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Hidden Tokens You Can Just Ask For</title>
+<style>
+  :root{
+    --bg:#f7f7f5; --card:#ffffff; --ink:#1f2328; --muted:#656d76;
+    --line:#e3e3df; --accent:#b5541b; --accent-soft:#fbeee4;
+    --code-bg:#1f2328; --code-ink:#e6edf3; --you:#eef4fb; --you-line:#c7dcf2;
+    --tldr:#eef6ee; --tldr-line:#bfe0bf;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  .wrap{max-width:820px; margin:0 auto; padding:48px 22px 96px}
+  header.doc{border-bottom:2px solid var(--accent); padding-bottom:22px; margin-bottom:28px}
+  .kicker{font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:700; margin:0 0 10px}
+  h1{font-size:31px; line-height:1.2; margin:0 0 10px; letter-spacing:-.01em}
+  .byline{font-size:14px; color:var(--muted); margin:0 0 14px}
+  .byline strong{color:var(--ink)}
+  .sub{color:var(--muted); font-size:15.5px; margin:0; max-width:62ch}
+  h2{font-size:21px; margin:46px 0 14px; padding-top:10px; letter-spacing:-.01em}
+  h3{font-size:16px; margin:30px 0 8px; color:var(--accent)}
+  p{margin:0 0 14px}
+  .tldr{background:var(--tldr); border:1px solid var(--tldr-line); border-radius:12px; padding:18px 22px; margin:0 0 30px}
+  .tldr h2{margin:0 0 8px; padding:0; font-size:13px; letter-spacing:.12em; text-transform:uppercase; color:#2f6b2f}
+  .tldr ul{margin:0; padding-left:20px}
+  .tldr li{margin:5px 0}
+  pre{
+    background:var(--code-bg); color:var(--code-ink); border-radius:10px;
+    padding:16px 18px; overflow-x:auto; font:13px/1.5 "SF Mono",ui-monospace,"Cascadia Code",Consolas,monospace;
+    margin:14px 0;
+  }
+  code{font:13.5px/1.4 "SF Mono",ui-monospace,"Cascadia Code",Consolas,monospace; background:var(--accent-soft); color:#8a3d12; padding:1px 5px; border-radius:5px}
+  pre code{background:none; color:inherit; padding:0}
+  table{border-collapse:collapse; width:100%; margin:16px 0; font-size:14.5px; background:var(--card); border-radius:10px; overflow:hidden}
+  th,td{border:1px solid var(--line); padding:9px 12px; text-align:left; vertical-align:top}
+  th{background:#f0efeb; font-weight:650}
+  td.num,th.num{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap}
+  tr.total td{font-weight:700; background:#faf6f2}
+  .callout{background:var(--accent-soft); border-left:4px solid var(--accent); border-radius:0 8px 8px 0; padding:14px 18px; margin:18px 0}
+  .callout p:last-child{margin-bottom:0}
+  .key{font-weight:650}
+  .editnote{font-size:12.5px; color:var(--muted); font-style:italic; margin-top:8px}
+  .seealso{font-size:13.5px; color:var(--muted); margin-top:10px}
+  a{color:var(--accent)}
+  blockquote.think{
+    background:#f1efff; border-left:4px solid #6b5bd6; border-radius:0 8px 8px 0;
+    padding:12px 18px; margin:16px 0; color:#33305a; font-size:14.5px;
+  }
+  blockquote.think p{margin:0 0 8px}
+  blockquote.think p:last-child{margin-bottom:0}
+  blockquote.think .lbl{display:block; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:#6b5bd6; font-weight:700; margin-bottom:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <p class="kicker">Field notes &middot; Claude usage accounting</p>
+  <h1>The Hidden Tokens You Can Just Ask For</h1>
+  <p class="byline">By <strong>Don Beckham</strong> &middot; 30 June 2026</p>
+  <p class="sub">A reasoning model thinks in tokens you never see &mdash; and then throws
+  them away. While chasing down why the model had written one odd little word, I realized
+  those hidden tokens were still sitting in the context, and that I could simply
+  <em>ask for them back</em>. That one request is free to make and surprisingly expensive
+  to keep. Here's the discovery, and what it costs.</p>
+</header>
+
+<div class="tldr">
+  <h2>TL;DR</h2>
+  <ul>
+    <li>An extended-thinking model emits a hidden <em>reasoning</em> block before its visible
+    reply. By default that reasoning is <span class="key">ephemeral</span>: billed once as
+    output, used to write the answer, then dropped from the context on the next turn.</li>
+    <li><span class="key">The aha:</span> while it's still in the current turn's context, you
+    can just <em>ask the model to re-emit it</em> &mdash; the hidden tokens print right out.
+    Hidden is not gone; it's one request away.</li>
+    <li>Re-emitting doesn't &ldquo;double&rdquo; anything. It changes the reasoning's
+    <em>lifetime</em>: copying it into the visible reply makes it <span class="key">persistent</span>,
+    so it's re-read as cache on every later turn instead of evaporating.</li>
+    <li>The bill is small per block but <span class="key">accretes</span>: every turn's
+    reasoning now rides along forever, climbing the <code>cache_read</code> line and filling
+    the context window faster &mdash; so you hit compaction sooner. Worth it to <em>read</em>
+    the model's work; leave it off otherwise.</li>
+  </ul>
+</div>
+
+<p>This one started, as these things do, with a detail too small to matter. The model had
+used the word <code>iff</code> &mdash; logician's shorthand for &ldquo;if and only if&rdquo;
+&mdash; in the middle of an otherwise ordinary explanation. I'd never seen a model produce
+what looked like a typo, and <code>iff</code> looks exactly like a misspelled
+<code>if</code>. So I asked about it.</p>
+
+<h2>1. The word that wasn't a typo</h2>
+
+<p>It wasn't a typo; <code>iff</code> is standard notation, used deliberately. But the
+interesting part was the next question I had: in the entire ocean of training text, there
+must be a <em>billion</em> ordinary &ldquo;if&rdquo;s for every rare &ldquo;iff.&rdquo; So how
+did that rare token win?</p>
+
+<p>The answer is the thing worth keeping. A model doesn't sample from how common a word is
+<em>overall</em> (its marginal probability). It samples from how likely the word is
+<em>given everything written above it</em> (its conditional probability). And everything above
+it was a terse, formal discussion of necessary-and-sufficient conditions &mdash; exactly the
+register where mathematicians reach for <code>iff</code> constantly. Conditioned on that
+context, <code>iff</code> wasn't a long-shot at all. It was near the top.</p>
+
+<div class="callout">
+  <p class="key">A token that's astronomically rare in general can be the obvious,
+  near-deterministic choice locally &mdash; once you account for the context it's conditioned
+  on. The gap between those two views is most of what makes a model's output feel uncanny.</p>
+</div>
+
+<h2>2. The aha: the hidden context is right there &mdash; ask for it</h2>
+
+<p>Here's where it turned. Part of &ldquo;everything written above&rdquo; is invisible to me.
+A reasoning model produces a <em>thinking block</em> &mdash; sometimes several &mdash; whose
+text is now hidden in Claude Code. It was a big disappointment when Anthropic started hiding
+how the model was reasoning, because the visible reply is still conditioned on those hidden
+tokens &mdash; I just never get to see them. I was effectively reconstructing the model's
+distribution from a partial view of its own prompt.</p>
+
+<p>And then the simple realization landed: <span class="key">if that reasoning is in the
+context, I can just ask the model to print it.</span> It's not sealed away in some other
+system &mdash; for the duration of the turn it's sitting in the same window everything else
+is. So I asked it to re-emit the thinking block. It did:</p>
+
+<blockquote class="think">
+  <span class="lbl">Re-emitted thinking block</span>
+  <p>Don makes a subtle point: the conditional context includes the hidden &ldquo;thinking&rdquo;
+  portion, which he can't see &mdash; which is why the rare token made sense. One honest
+  precision: in this case the visible thread had already locked the formal register, so the
+  hidden part nudged rather than decided&hellip;</p>
+</blockquote>
+
+<p>That's the whole trick. The reasoning I'd been told was hidden was recoverable on demand
+&mdash; not through any special access, just by asking the thing to read its own scratch
+paper back to me. From there it was a half-step to a standing arrangement: <em>whenever you
+finish a thinking block, re-emit it before continuing.</em> Suddenly the model's work showed
+its work.</p>
+
+<h2>3. What it costs: ephemeral becomes persistent</h2>
+
+<p>The accountant in me couldn't leave it there. If I'm pulling these tokens into every reply,
+what does that do to the ledger? The intuition is &ldquo;now everything's in there twice, so
+it grows faster.&rdquo; Close, but the real mechanism is sharper &mdash; and it's about
+<em>lifetime</em>, not duplication.</p>
+
+<p>By default, a turn's thinking is <span class="key">ephemeral</span>. It's generated and
+billed once as output, used to produce the answer, and then &mdash; per the documented API
+behavior &mdash; <em>stripped from the context on the next turn</em>. It costs you output
+tokens exactly once, then zero forever after. It evaporates.</p>
+
+<p>Re-emitting it into the <em>visible</em> reply changes that. The visible message is part of
+the permanent transcript, and the transcript is re-sent on every following turn (the whole
+mechanism the <a href="token-accounting-conversation.html">companion piece</a> is about). So
+re-emission doesn't count the tokens twice &mdash; it <span class="key">converts tokens that
+would have vanished into tokens that persist for the rest of the session.</span> The cost
+lands in two places:</p>
+
+<ul>
+  <li><span class="key">Transient, this turn</span> &mdash; the hidden block and its visible
+  copy briefly coexist, so that content is generated roughly twice as output. A small,
+  one-time bump.</li>
+  <li><span class="key">Cumulative, every later turn</span> &mdash; the persisted copy is
+  re-read as <code>cache_read</code> (a tenth of the input price) on all subsequent turns,
+  plus a one-time cache write to land it. It never drops back to zero the way the ephemeral
+  original would have.</li>
+</ul>
+
+<p>Put numbers on it. Using the Opus&nbsp;4.8 list rates &mdash; output <code>$25</code>,
+cache-write-1h <code>$10</code>, cache-read <code>$0.50</code> per million tokens &mdash; for a
+single <strong>500-token</strong> thinking block:</p>
+
+<table>
+  <tr><th>Cost component</th><th>When</th><th class="num">Re-emit OFF</th><th class="num">Re-emit ON</th></tr>
+  <tr><td>Generate the reasoning (output)</td><td>turn produced</td><td class="num">$0.01250</td><td class="num">$0.01250</td></tr>
+  <tr><td>Generate the visible copy (output)</td><td>turn produced</td><td class="num">&mdash;</td><td class="num">$0.01250</td></tr>
+  <tr><td>Cache-write the persisted copy (1h)</td><td>turn produced</td><td class="num">&mdash;</td><td class="num">$0.00500</td></tr>
+  <tr><td>Re-read as input, per later turn</td><td>each future turn</td><td class="num">$0</td><td class="num">$0.00025</td></tr>
+  <tr class="total"><td>&hellip;over 100 later turns</td><td></td><td class="num">$0</td><td class="num">$0.02500</td></tr>
+</table>
+
+<p>A few cents for one block &mdash; trivial in isolation. The catch is the last row's logic
+applied <em>across the whole session</em>: with re-emission on, <span class="key">every</span>
+turn's reasoning persists, so the per-turn <code>cache_read</code> base climbs steadily
+instead of resetting. And as the <a href="token-accounting-conversation.html">accounting
+walk-through</a> shows, <code>cache_read</code> is already the single biggest line on a long
+session's bill. You're feeding the column that's already the largest.</p>
+
+<h2>4. The cost that isn't in dollars</h2>
+
+<p>The bigger practical cost isn't the pennies &mdash; it's the window. Reasoning that used to
+be shed each turn now accumulates, so the context fills faster and the session reaches
+<span class="key">compaction</span> sooner. Compaction costs a summarization pass and gives up
+fidelity. On a long working session, hitting that wall early usually outweighs the cache-read
+cents by a wide margin.</p>
+
+<p>Which is the honest punchline for an accounting project: <span class="key">visibility is the
+product; persistence is the bill.</span> Asking the model to show its work is free to request
+and genuinely useful &mdash; but it quietly trades away the thing that normally keeps long
+sessions cheap, which is letting the reasoning disappear.</p>
+
+<h2>5. So: a switch, not a setting</h2>
+
+<p>I keep it <span class="key">off by default</span> and turn it on deliberately &mdash; when I
+actually want to read or audit how a turn reached its answer, or, as here, when the model's
+thinking <em>is</em> the subject. The toggle is the whole point: pay for the window into the
+reasoning exactly when the window is worth more than the headroom.</p>
+
+<p>And true to the spirit of this project, the dollar model above is a model, not a
+measurement. The ledger is the instrument &mdash; compare the <code>cache_read</code> line and
+the context-growth rate across a few turns with re-emission on versus off, and let the numbers
+settle it. Test, don't theorize.</p>
+
+<p class="seealso">Companion pieces:
+<a href="token-accounting-conversation.html">&ldquo;Why a Tiny Reply &lsquo;Costs&rsquo;
+54,000 Tokens&rdquo;</a> &mdash; how per-turn token billing and prompt caching actually work;
+and <a href="now-lets-talk-about-limits.html">&ldquo;Now Let's Talk About Limits&rdquo;</a>
+&mdash; the rate-limit side of the same story.</p>
+
+</div>
+</body>
+</html>
