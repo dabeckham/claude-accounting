@@ -60,3 +60,5 @@ What the ledger **cannot** know (server-side only): which tokens fell within you
 ## A note on magnitude
 
 On long agentic sessions **`cache_read` dominates** — the full context is re-read on every tool round-trip — so a single heavy turn can be several dollars even with little visible output. That's accurate to how the API bills, and it's the accountability signal this project exists to surface.
+
+> **See also:** [THINKING_REEMISSION.md](THINKING_REEMISSION.md) — re-emitting a turn's hidden reasoning into the visible reply converts it from ephemeral to persistent, feeding exactly this `cache_read` line on every later turn.
