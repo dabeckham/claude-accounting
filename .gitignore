@@ -1,2 +1,13 @@
 __pycache__/
 *.pyc
+
+# Local working notes at the repo root — never published.
+# (README is the only root-level doc that belongs in the repo.)
+/*.md
+!/README.md
+/*.txt
+CLAUDE.md
+transcripts/
+
+# Generated usage reports at repo root (contain personal account data)
+/*.html

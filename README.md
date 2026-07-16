@@ -132,7 +132,10 @@ claude-accounting/
 │   ├── timelog-hook.py           ← appends events; parses transcript tail for tokens/model; parses effort tag
 │   ├── timelog_core.py           ← shared turn summing + pricing + per-session effort state (imported by the hook AND the backfill)
 │   ├── backfill-from-transcripts.py ← reconstruct historical turn_end events from old transcripts
-│   └── timelog-report.py         ← deterministic report generator (engine behind /accounting)
+│   ├── timelog-report.py         ← deterministic report generator (engine behind /accounting)
+│   ├── timelog-webui.py          ← zero-token local web server for the ledger (reads the JSONL off disk)
+│   ├── statusline-limits.py      ← captures the plan-limit meters (5-hour/weekly %) into the ledger
+│   └── statusline-limits.sh      ← statusline wrapper (wired as statusLine in ~/.claude/settings.json)
 ├── config/
 │   ├── pricing.json              ← dated pricing schedules (append a new one when rates change)
 │   └── settings.example.json     ← the hooks block to merge into ~/.claude/settings.json
@@ -168,6 +171,33 @@ python ~/.claude/timelog-report.py all --billing
 It prints sessions & interactive time, a time breakdown (agent working time vs your idle/reading vs logged task intervals), cost (Actual + Today), token totals, and the effort mix — all computed deterministically from the ledger.
 
 > Slash commands register **at Claude Code startup**, so a freshly-installed `/accounting` only appears in a new session. Until then, run `timelog-report.py` directly.
+
+## Zero-token web UI
+
+Checking your usage shouldn't itself consume usage. `timelog-webui.py` is a localhost-only server that reads the ledger straight off disk on every request — no model, no tokens — so you can watch the numbers while your account is completely idle:
+
+```sh
+cp scripts/timelog-webui.py ~/.claude/
+python ~/.claude/timelog-webui.py          # serves http://localhost:8787
+```
+
+`/api/data` returns the raw ledger rows plus the pricing schedules as JSON, re-read fresh on every request. The single-page report frontend (`timelog-webui.html`) is still in progress; until it lands, the root page links to the data endpoint.
+
+## Capturing the plan-limit meters (`limits` rows)
+
+Since Claude Code 2.1.80, the statusline input JSON carries `rate_limits` — the same 5-hour and weekly utilization percentages the usage pane displays, with their reset instants. `statusline-limits.py` taps that feed and appends `category: "limits"` rows to the ledger, throttled so it doesn't spam: a row whenever any meter moves ≥ 0.5 points, plus a 15-minute heartbeat. The freshest raw payload is always mirrored to `~/.claude/time-tracking/statusline-last.json`.
+
+```sh
+cp scripts/statusline-limits.py scripts/statusline-limits.sh ~/.claude/
+```
+
+then wire it into `~/.claude/settings.json` (statusline config loads at session start):
+
+```json
+"statusLine": { "type": "command", "command": "sh \"$HOME/.claude/statusline-limits.sh\"" }
+```
+
+This gives the ledger an authoritative record of what the account-wide meters actually said over time — the piece a machine-local token count alone can never tell you (see the *Limits* write-ups below).
 
 ---
 
