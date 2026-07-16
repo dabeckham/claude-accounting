@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>I Finally Hit the Wall on Max5 &mdash; and I Was Wrong About Why</title>
+<style>
+  :root{
+    --bg:#f7f7f5; --card:#ffffff; --ink:#1f2328; --muted:#656d76;
+    --line:#e3e3df; --accent:#3a52b0; --accent-soft:#eaeefb;
+    --code-bg:#1f2328; --code-ink:#e6edf3;
+    --tldr:#eef6ee; --tldr-line:#bfe0bf; --good:#1f7a4d; --bad:#c0392b;
+    --warn:#fbf4e6; --warn-line:#e8d199;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:820px; margin:0 auto; padding:48px 22px 96px}
+  header.doc{border-bottom:2px solid var(--accent); padding-bottom:22px; margin-bottom:28px}
+  .kicker{font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); font-weight:700; margin:0 0 10px}
+  h1{font-size:30px; line-height:1.2; margin:0 0 10px; letter-spacing:-.01em}
+  .byline{font-size:14px; color:var(--muted); margin:0 0 14px}
+  .byline strong{color:var(--ink)}
+  .sub{color:var(--muted); font-size:15.5px; margin:0; max-width:64ch}
+  h2{font-size:21px; margin:44px 0 14px; padding-top:8px; letter-spacing:-.01em}
+  h3{font-size:16px; margin:28px 0 8px; color:var(--accent)}
+  p{margin:0 0 14px}
+  .tldr{background:var(--tldr); border:1px solid var(--tldr-line); border-radius:12px; padding:18px 22px; margin:0 0 30px}
+  .tldr h2{margin:0 0 8px; padding:0; font-size:13px; letter-spacing:.12em; text-transform:uppercase; color:#2f6b2f}
+  .tldr ul{margin:0; padding-left:20px}
+  .tldr li{margin:5px 0}
+  pre{background:var(--code-bg); color:var(--code-ink); border-radius:10px; padding:16px 18px; overflow-x:auto;
+    font:13px/1.5 "SF Mono",ui-monospace,"Cascadia Code",Consolas,monospace; margin:14px 0;}
+  code{font:13.5px/1.4 "SF Mono",ui-monospace,"Cascadia Code",Consolas,monospace; background:var(--accent-soft); color:#2b3d86; padding:1px 5px; border-radius:5px}
+  pre code{background:none; color:inherit; padding:0}
+  table{border-collapse:collapse; width:100%; margin:16px 0; font-size:14.5px; background:var(--card); border-radius:10px; overflow:hidden}
+  th,td{border:1px solid var(--line); padding:9px 12px; text-align:left; vertical-align:top}
+  th{background:#eef0f6; font-weight:650}
+  td.num,th.num{text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap}
+  tr.total td{font-weight:700; background:#f4f6fc}
+  .callout{background:var(--accent-soft); border-left:4px solid var(--accent); border-radius:0 8px 8px 0; padding:14px 18px; margin:18px 0}
+  .callout p:last-child{margin-bottom:0}
+  .warn{background:var(--warn); border-left:4px solid #cf9b1f; border-radius:0 8px 8px 0; padding:14px 18px; margin:18px 0}
+  .warn p:last-child{margin-bottom:0}
+  .key{font-weight:650}
+  .yes{color:var(--good); font-weight:700}
+  .no{color:var(--bad); font-weight:700}
+  .meter{display:flex; align-items:center; gap:10px; margin:8px 0; font-size:14px}
+  .meter .label{width:150px; color:var(--muted)}
+  .bar{flex:1; height:12px; background:#e7e9ef; border-radius:6px; overflow:hidden}
+  .bar span{display:block; height:100%; background:var(--accent); border-radius:6px}
+  .bar span.full{background:var(--bad)}
+  .meter .pct{width:42px; text-align:right; font-variant-numeric:tabular-nums; font-weight:650}
+  .seealso{font-size:13.5px; color:var(--muted); margin-top:24px}
+  a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <p class="kicker">Field notes &middot; Claude usage limits</p>
+  <h1>I Finally Hit the Wall on Max5 &mdash; and I Was Wrong About Why</h1>
+  <p class="byline">By <strong>Don Beckham</strong> &middot; 1 July 2026</p>
+  <p class="sub">For weeks I'd said I had never once hit the 5-hour limit on the $100/month Max5 plan.
+  Last night I finally did. I had an immediate hunch about the cause &mdash; and it was mostly wrong.
+  Chasing down the real reason turned my own ledger into a clean falsification test of the single
+  assumption every one of these write-ups rests on: that <em>cached tokens are free against the
+  meter</em>. Here's the wall, the wrong guess, and the proof.</p>
+</header>
+
+<div class="tldr">
+  <h2>TL;DR</h2>
+  <ul>
+    <li>First time hitting the <strong>5-hour wall on Max5</strong> ($100/mo). Anthropic
+    <em>doubled</em> these limits in May, so it takes serious volume &mdash; the window opened
+    ~8:20&nbsp;PM, I exhausted it by ~12:20&nbsp;AM, locked out until it reset at 1:20&nbsp;AM.</li>
+    <li>My first guess &mdash; that <em>thinking re-emission</em>, which I'd left ON in one project,
+    filled the window and caused it &mdash; was <span class="key">mostly wrong</span>. The wall is
+    driven by <em>output</em>, and I was running four output-heavy autonomous agents at once.</li>
+    <li>The real prize: the ledger let me <span class="key">falsify the cache question directly</span>.
+    One 5-hour window sailed through <strong>529 million</strong> cache tokens with no throttle; a
+    later one walled at half that cache but more fresh in+out. Cache's weight against the limit is
+    <strong>under 0.24%</strong> of the input rate &mdash; effectively zero.</li>
+    <li>The meter counts what the model <em>freshly ingests and generates</em>. Cache &mdash; the
+    biggest line on your bill &mdash; is free against the rate limit. Now <span class="key">proven from
+    my own data</span>, not assumed.</li>
+  </ul>
+</div>
+
+<h2>1. The wall I'd been told I'd never hit</h2>
+
+<p>The <a href="now-lets-talk-about-limits.html">earlier limits piece</a> worked the caps out
+indirectly and noted that on Max5 I'd never actually reached the 5-hour ceiling &mdash; my heaviest
+windows topped out around two-thirds of it. Anthropic had just <strong>doubled</strong> Claude Code's
+5-hour limits (6&nbsp;May) and lifted weekly limits <strong>50%</strong> (13&nbsp;May, through
+13&nbsp;July), so there was a lot of headroom. Hitting the wall on that plan takes real work.</p>
+
+<p>Last night I did. Mid-session, the model simply stopped: the 5-hour budget was spent.</p>
+
+<div class="callout">
+  <div class="meter"><span class="label">5-hour limit</span><span class="bar"><span class="full" style="width:100%"></span></span><span class="pct">100%</span></div>
+  <div class="meter"><span class="label">Weekly &middot; all models</span><span class="bar"><span style="width:11%"></span></span><span class="pct">11%</span></div>
+  <p style="margin:6px 0 0; font-size:13px; color:var(--muted)">Window opened ~8:20&nbsp;PM (30&nbsp;Jun); exhausted ~12:20&nbsp;AM; reset 1:20&nbsp;AM. The ledger confirms it: the last turn that completed is stamped 12:16&nbsp;AM, and the next prompt &mdash; 12:24&nbsp;AM &mdash; has no matching completion. That dangling prompt is the throttle.</p>
+</div>
+
+<p>So the window didn't run out of <em>time</em>; it ran out of <em>budget</em>, about four hours in.
+The obvious question: what did I do differently that finally pushed me over?</p>
+
+<h2>2. My first guess &mdash; and why the data overruled it</h2>
+
+<p>I had an immediate suspect. In one of the projects &mdash; call it Jarvis &mdash; I'd turned on
+<a href="asking-for-the-hidden-tokens.html">thinking re-emission</a>: every reasoning block gets
+copied into the visible output. I'd literally watched the 5-hour slider crawl while it worked, and I
+knew from <a href="THINKING_REEMISSION.md">the cost write-up</a> that re-emission fills the context
+window fast. Case closed, surely: re-emission burned the window, turn it off, problem solved.</p>
+
+<p>Except the ledger didn't back me up. Breaking the wall window down by project, by the tokens that
+actually count against the limit (fresh input + output):</p>
+
+<table>
+  <tr><th>Project</th><th class="num">Output tokens</th><th class="num">Out / turn</th><th class="num">Share of counted tokens</th></tr>
+  <tr><td>Revere</td><td class="num">642,272</td><td class="num">42,818</td><td class="num">32.2%</td></tr>
+  <tr><td>claude_code_frigate</td><td class="num">596,127</td><td class="num">37,257</td><td class="num">27.9%</td></tr>
+  <tr><td>Jarvis <span style="color:var(--muted)">(re-emission ON)</span></td><td class="num">467,915</td><td class="num">38,992</td><td class="num">24.3%</td></tr>
+  <tr><td>frigate-revere-produ</td><td class="num">322,703</td><td class="num">107,567</td><td class="num">15.7%</td></tr>
+</table>
+
+<p>Jarvis was <em>third</em> &mdash; behind two projects with re-emission <em>off</em> and comparable
+output per turn. I wasn't felled by one setting; I was running <span class="key">four output-heavy
+autonomous agents in parallel for four hours.</span> The decisive check: if I zero out
+<em>all</em> of Jarvis's output, the other three still sum to 1.78M &mdash; <strong>79% of a maxed
+window</strong> on their own. Re-emission trims only part of one project's share; it was never going
+to be the difference between hitting the wall and not.</p>
+
+<div class="warn">
+  <p>The subtler error in my hunch was a <span class="key">meter mix-up</span>. Re-emission fills the
+  <em>context window</em> &mdash; that's real, and it's what I watched. But a full context is
+  <em>cache</em>, and (as we're about to prove) cache is free against the 5-hour limit. The thing I
+  watched fill fast is not the thing that hit the wall. Re-emission costs you dollars and compaction
+  headroom; it barely touches the rate meter. Two different meters.</p>
+</div>
+
+<p>Which is the whole ethos of this project turned on myself: <span class="key">test, don't
+theorize.</span> The tidy story was wrong, and the data said so in about thirty seconds.</p>
+
+<h2>3. The assumption worth testing: is cache really free?</h2>
+
+<p>That left the real driver &mdash; output &mdash; and one nagging thread. Every piece here has
+leaned on a claim I'd only ever <em>asserted</em>: that the rate limit counts fresh input and output,
+while cache reads and writes are free. If that's even slightly wrong, my whole model of the meter is
+wrong. Hitting the wall gave me the two data points to settle it, so I stopped asserting and tested.</p>
+
+<p>The logic of the test: if cache counted against the limit at any meaningful weight, then my
+cache-heavy history &mdash; hundreds of millions of cache tokens per five-hour stretch &mdash; would
+have walled me <em>long</em> before last night. It never had. Time to make that quantitative.</p>
+
+<h2>4. The two-window proof</h2>
+
+<p>The cleanest evidence is two five-hour windows <span class="key">on the same machine</span> &mdash;
+so there's nothing to argue about &mdash; where one sailed through and the other walled:</p>
+
+<table>
+  <tr><th>5-hour window</th><th class="num">Fresh in+out</th><th class="num">Cache (read+write)</th><th>Outcome</th></tr>
+  <tr><td>ending 30&nbsp;Jun 5:40&nbsp;PM</td><td class="num">1,610,315</td><td class="num">528,901,202</td><td><span class="yes">&#10003; no throttle</span></td></tr>
+  <tr><td>ending 1&nbsp;Jul ~12:20&nbsp;AM <span style="color:var(--muted)">(the wall)</span></td><td class="num">2,246,747</td><td class="num">264,143,040</td><td><span class="no">&#10007; throttled</span></td></tr>
+</table>
+
+<p>Read the ordering, because it's the whole argument:</p>
+<ul>
+  <li>The window I <span class="yes">sailed through had <em>twice</em> the cache</span> (529M vs 264M).
+  If cache counted, that window would have drained the budget faster and walled me <em>first</em>. It
+  didn't.</li>
+  <li>The window that <span class="no">walled me had <em>more</em> fresh in+out</span> (2.25M vs
+  1.61M). The metric that correctly ordered &ldquo;survived below, walled above&rdquo; is
+  <strong>in+out</strong>. Cache ordered the two <em>backwards</em>.</li>
+</ul>
+
+<p>Turn that into a bound. For the survived window to sit under the ceiling the wall defines, the
+weight <code>w</code> the limit places on a cache token (relative to an input token) can be at most:</p>
+
+<pre><code>w &lt; (2,246,747 &minus; 1,610,315) / (528,901,202 &minus; 264,143,040)
+  = 636,432 / 264,758,162
+  = 0.0024   &rarr;  0.24% of the input rate</code></pre>
+
+<div class="callout">
+  <p class="key">Anthropic <em>bills</em> a cache read at 10% of the input rate. The rate
+  <em>limit</em> weighs it at under <strong>0.24%</strong> &mdash; more than 42&times; below even the
+  discounted billing rate, and statistically indistinguishable from zero. Cache read and write are
+  free against the 5-hour limit. Not assumed &mdash; falsified from my own ledger.</p>
+</div>
+
+<p>Put plainly: I pushed <strong>529 million</strong> cache tokens through the model in five hours
+without moving the needle, then hit the wall on <strong>2.25 million</strong> of fresh output and
+input. The meter charges for what the model <em>generates and freshly reads</em>, and waves through
+everything it re-reads from cache &mdash; which, on a long agentic session, is the overwhelming
+majority of the traffic.</p>
+
+<h2>5. So what actually moved the meter</h2>
+
+<p>Output did. In the wall window, <span class="key">90% of the counted tokens were output</span>
+(2.03M of 2.25M). Meanwhile 264M of cache rode along for free. That's the same lesson as the
+<a href="token-accounting-conversation.html">accounting walk-through</a> and the
+<a href="now-lets-talk-about-limits.html">limits piece</a>, now demonstrated the hard way: what
+throttles you is <em>generation</em>, run across enough concurrent agents to pile up a couple million
+output tokens in five hours.</p>
+
+<p>And it re-frames re-emission correctly. Since cache is free against this meter, re-emission's main
+effect &mdash; growing the cached context &mdash; costs you <span class="key">money and compaction
+headroom, not rate-limit budget.</span> Worth turning off for those reasons; not the lever that keeps
+you under the 5-hour wall. My instinct pointed at the right kind of cost and the wrong meter.</p>
+
+<h2>6. The honest edges</h2>
+
+<p>Two caveats keep this from over-claiming.</p>
+
+<h3>My first, worse guess was that the limits had been cut</h3>
+<p>Before I suspected re-emission, my very first reflex was to reverse-engineer a ceiling and compare
+it to June &mdash; and the arithmetic <em>looked</em> like the caps had been halved. That's flatly
+contradicted by the record: Anthropic <em>raised</em> these limits (doubled the 5-hour in May,
++50% weekly through July). When a number I derive disagrees with the vendor's published change in the
+opposite direction, the number is what I should distrust. The limits went up; the extra load was on
+my side.</p>
+
+<h3>This ledger sees one machine; the cap is account-wide</h3>
+<p>The token totals here come from Claude Code hooks on <em>this</em> machine, but the 5-hour and
+weekly caps bill across the whole account. So every ceiling I extract is a <span class="key">lower
+bound</span> &mdash; &ldquo;this machine spent at least 2.25M before the shared meter hit full,&rdquo;
+not &ldquo;the ceiling is exactly 2.25M.&rdquo; Happily, the cache proof above is immune to this: both
+windows are the same machine's own traffic, so the &ldquo;free&rdquo; result stands regardless of what
+ran elsewhere. The <em>ceiling</em> number is the soft part; the <em>cache-is-free</em> finding is the
+solid one. Pinning the exact ceiling is a job for a clean window measured against the on-screen meter
+&mdash; the next experiment.</p>
+
+<p>The headline, then, isn't a number. It's a correction and a confirmation: I hit the wall by
+generating too much across too many agents at once &mdash; not by any one clever setting &mdash; and
+in chasing the wrong culprit I finally <em>proved</em> the thing I'd been taking on faith. Cache is
+free. Output is the bill. Test, don't theorize &mdash; especially when the theory is your own.</p>
+
+<p class="seealso">Companion pieces:
+<a href="now-lets-talk-about-limits.html">&ldquo;Now Let's Talk About Limits&rdquo;</a> &mdash; the
+first pass at what the 5-hour and weekly caps count;
+<a href="token-accounting-conversation.html">&ldquo;Why a Tiny Reply &lsquo;Costs&rsquo; 54,000
+Tokens&rdquo;</a> &mdash; how per-turn billing and caching work; and
+<a href="asking-for-the-hidden-tokens.html">&ldquo;The Hidden Tokens You Can Just Ask For&rdquo;</a>
+&mdash; the reasoning you can ask the model to re-emit, and what it actually costs.</p>
+
+</div>
+</body>
+</html>
