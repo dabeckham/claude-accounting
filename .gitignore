@@ -11,3 +11,6 @@ transcripts/
 
 # Generated usage reports at repo root (contain personal account data)
 /*.html
+
+# Local working files - never committed
+local/
