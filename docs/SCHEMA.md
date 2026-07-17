@@ -1,12 +1,17 @@
-# Time-Tracking Ledger
+# Time-Tracking Ledger — the "sessions ledger"
 
 A cross-session, cross-project record of (a) how long Don spends in interactive
 Claude sessions and (b) how long Claude's tasks take. Built 2026-06-17 so any
 session can append, and a future UI can read it and generate reports.
 
+> **Name.** This file is **the sessions ledger** — written by the sessions themselves
+> via hooks. Call it that to distinguish it from any *separate* accounting store that
+> observes sessions from the outside; when someone says "the ledger" in this repo they
+> mean this one, `timelog.jsonl`.
+
 ## Files
-- `timelog.jsonl` — the ledger. **Append-only, one JSON object per line.** Never
-  rewrite or reorder; only append. Single-line appends are atomic, so parallel
+- `timelog.jsonl` — the **sessions ledger**. **Append-only, one JSON object per line.**
+  Never rewrite or reorder; only append. Single-line appends are atomic, so parallel
   sessions are safe.
 - `~/.claude/timelog.sh` — helper for agents to log intervals/events + view.
 - `~/.claude/timelog-hook.sh` — hook-side logger (writes automatic events).

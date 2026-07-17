@@ -9,9 +9,14 @@ byte-for-byte the same way the hook counted it live.
 A "turn" is the slice of a transcript from one real user prompt up to (but not
 including) the next. A real user prompt is an entry with type == "user" that does
 NOT carry a "toolUseResult" key (tool-result messages also have type "user").
-Usage is summed over the *assistant* messages in that slice, preferring the
-per-message `usage.iterations` array when present (it already de-duplicates the
-streaming snapshots that otherwise inflate the counts).
+
+Usage is summed over the *assistant* messages in that slice, DEDUPED BY
+`requestId`: a single streamed API response is written to the transcript as
+multiple assistant records that share one requestId, each carrying the same
+usage snapshot. Counting every record multi-counts real API calls (measured
+~2.6x on live data). We keep one usage snapshot per requestId (last record
+wins — the finalized value) and count it once, reading the top-level usage
+fields directly.
 """
 import os, json, time
 
@@ -41,43 +46,53 @@ def iter_turn_slices(rows):
 
 
 def summarize_turn(turn_rows):
-    """Sum the usage of the assistant messages in one turn slice. Returns a dict
-    of the same token/model fields the live hook records (with `msgs` == 0 and an
-    empty model when the slice holds no assistant messages — callers that want to
-    drop empty turns should check `msgs`). Mirrors `_accum` in timelog-hook.py."""
-    tin = tout = tcr = cw5 = cw1 = cc_total = ws = wf = nmsg = 0
+    """Sum one turn's token usage, counting each real API call exactly once.
+
+    Streaming writes a single API response as several assistant records sharing
+    one `requestId`, each with the same usage snapshot; summing them all inflates
+    the counts ~2.6x. We group the turn's assistant records by requestId, keep
+    the last snapshot per request (the finalized value), and accumulate once per
+    request, so each real API call is counted exactly once. Returns the
+    token/model fields the live hook records; `msgs` is the number of distinct
+    API calls in the turn (0 when the slice holds none, so callers that drop
+    empty turns can still check it)."""
+    # Last usage snapshot per requestId, in first-seen order.
+    per_req, order = {}, []
     models, thinking = set(), False
-
-    def _accum(d):
-        nonlocal tin, tout, tcr, cw5, cw1, cc_total
-        tin += d.get("input_tokens", 0) or 0
-        tout += d.get("output_tokens", 0) or 0
-        tcr += d.get("cache_read_input_tokens", 0) or 0
-        cc_total += d.get("cache_creation_input_tokens", 0) or 0
-        cc = d.get("cache_creation") or {}
-        cw5 += cc.get("ephemeral_5m_input_tokens", 0) or 0
-        cw1 += cc.get("ephemeral_1h_input_tokens", 0) or 0
-
     for e in turn_rows:
         if e.get("type") != "assistant":
             continue
         m = e.get("message", {}) or {}
         if m.get("model"):
             models.add(m["model"])
-        u = m.get("usage", {}) or {}
-        iters = u.get("iterations")
-        if iters:
-            for it in iters:
-                _accum(it)
-        else:
-            _accum(u)
-        stu = u.get("server_tool_use", {}) or {}
-        ws += stu.get("web_search_requests", 0) or 0
-        wf += stu.get("web_fetch_requests", 0) or 0
         for c in (m.get("content") or []):
             if isinstance(c, dict) and c.get("type") == "thinking":
                 thinking = True
-        nmsg += 1
+        u = m.get("usage", {}) or {}
+        if not u:
+            continue
+        # Dedupe key: requestId, then the message id, then a per-record unique
+        # fallback (so an id-less record is still counted once, never collapsed).
+        key = e.get("requestId") or m.get("id")
+        if key is None:
+            key = ("_noid", len(order))
+        if key not in per_req:
+            order.append(key)
+        per_req[key] = u  # last record wins
+
+    tin = tout = tcr = cw5 = cw1 = cc_total = ws = wf = 0
+    for key in order:
+        u = per_req[key]
+        tin += u.get("input_tokens", 0) or 0
+        tout += u.get("output_tokens", 0) or 0
+        tcr += u.get("cache_read_input_tokens", 0) or 0
+        cc_total += u.get("cache_creation_input_tokens", 0) or 0
+        cc = u.get("cache_creation") or {}
+        cw5 += cc.get("ephemeral_5m_input_tokens", 0) or 0
+        cw1 += cc.get("ephemeral_1h_input_tokens", 0) or 0
+        stu = u.get("server_tool_use", {}) or {}
+        ws += stu.get("web_search_requests", 0) or 0
+        wf += stu.get("web_fetch_requests", 0) or 0
 
     # If the split buckets are empty but a total was reported, attribute it to the
     # 5-minute bucket (the default cache TTL) so cost isn't undercounted.
@@ -94,7 +109,7 @@ def summarize_turn(turn_rows):
         "web_search": ws,
         "web_fetch": wf,
         "used_thinking": thinking,
-        "msgs": nmsg,
+        "msgs": len(order),
     }
 
 

@@ -8,22 +8,26 @@ line carries the model + token usage needed to rebuild a turn.
 `scripts/backfill-from-transcripts.py` replays those transcripts and appends one
 reconstructed `turn_end` per turn.
 
-## Why a naive reconstruction is wrong
+## Counting: dedupe by `requestId`
 
-The obvious approach — sum `message.usage` over every assistant line — does **not**
-reconcile with the ledger, because transcripts contain **streaming snapshots**: the
-same `message.id` appears many times as the response streams. For 2026-06-17, 1,056
-raw assistant lines collapse to 401 unique ids.
+Transcripts contain **streaming snapshots**: a single API response is written as
+several assistant records that share one `requestId` (and one `message.id`), each
+repeating the same `usage`. Counting every record multi‑counts the real API calls —
+measured **~2.6× on current transcripts** (e.g. 63 records → 29 real calls).
 
-- Counting every line (no dedup) **overcounts** (cost $338.90 vs the ledger's $138.90).
-- Deduping by `message.id` (first / last / max — all equivalent) **undercounts** ($130.09).
-- A token-level diff is **bidirectional** (some fields high, some low), proving it's
-  the *summing method*, not a dedup tweak.
+The summer therefore **dedupes by `requestId`**, keeping the last snapshot per
+request and counting it once. On a full transcript this lands on 326,617 output tokens
+across 252 calls, versus 873,552 (2.67×) if every record is summed.
 
-The live hook doesn't sum per message — it sums **per turn**. It finds the turn
-boundary at the last real user prompt (`type == "user"` **without** a `toolUseResult`
-key) and accumulates the `usage` of the assistant messages since then, preferring
-each message's `usage.iterations` array (which already collapses the snapshots).
+> **Correction (2026-07-17).** Earlier revisions summed **every** record (via each
+> message's `usage.iterations` array) on the theory that it "already collapsed the
+> snapshots." It does not — it counts each duplicate record, inflating every streamed
+> turn ~2.6×. The bug went unnoticed because the backfill's verify gate reconciled the
+> reconstruction against the **live hook**, which summed the same way — a circular
+> check that reproduced the inflation instead of catching it. An independent
+> per-`requestId` recount of the same transcripts exposed it. `summarize_turn` now
+> dedupes; historical ledger rows written before this date are still inflated (see the
+> verify gate below).
 
 ## The fix: one shared summer
 
@@ -33,7 +37,7 @@ turn is counted byte-for-byte the way the hook counts it live — there is only 
 path, and it can't drift.
 
 - `iter_turn_slices(rows)` — split a transcript into turns at each prompt boundary.
-- `summarize_turn(rows)` — sum one turn's assistant usage (the hook's old `_accum`).
+- `summarize_turn(rows)` — sum one turn's assistant usage, deduped by `requestId`.
 - `price_turn(rec, schedules, date_str)` — cost from the schedule in effect on a date.
 
 ## The verify gate
@@ -45,11 +49,15 @@ python ~/.claude/backfill-from-transcripts.py --verify
 ```
 
 It re-derives the turns the live hook **already recorded** (matching by session +
-end-time) and confirms they reproduce the ledger's tokens and `cost_usd` **to the
-cent**. On the dev machine: 39/39 ledger turns matched, 38 reproduce exactly. The one
-exception is the very first turn ever logged — written by a pre-`cache_write`-split
-hook revision that stored a `cache_creation` field and didn't price the cache write;
-it's reported explicitly and tolerated. Only reconstruct once this gate passes.
+end-time) and compares tokens and `cost_usd`.
+
+> ⚠️ **Since the 2026-07-17 dedupe fix, `--verify` intentionally MISMATCHES historical
+> rows.** Rows written by the pre-fix hook are inflated ~2.6×; the fixed summer
+> reproduces the *correct* (lower) numbers, so the comparison now flags exactly how
+> much each old turn was over-counted. That is the fix working, not a regression — the
+> mismatch is the measure of the damage, and the input to the cleanup that re-derives
+> the historical rows. Verify against a turn written *after* the fix to confirm a clean
+> reproduction.
 
 (`--verify` checks only real live-hook turns, ignoring any `reconstructed` rows, so it
 stays meaningful and re-runnable after a backfill has been applied.)
