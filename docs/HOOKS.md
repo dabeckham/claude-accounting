@@ -25,7 +25,7 @@ Token usage and the model id are **not** in the hook payload — they live only 
 
 1. Reads only the **last ~2 MB** of the transcript (transcripts grow to tens of MB; the current turn is at the end).
 2. Walks back to the last real user prompt (a `type:"user"` entry **without** a `toolUseResult` key — tool results are also `type:"user"`).
-3. Sums usage across every assistant message in that turn, including each tool round‑trip's `iterations[]` (each is a billed API call), so `cache_read` can be very large on long sessions.
+3. Sums the turn's usage **deduped by `requestId`**, counting each real API call once. A streamed response is written to the transcript as several assistant records that share one `requestId`, each repeating the same usage snapshot; counting them all multi‑counts (~2.6× on current transcripts). The summer keeps the last snapshot per `requestId`, so each API call is counted once. Cache reads still accumulate across a turn's many tool round‑trips (each a distinct API call), so `cache_read` can be very large on long sessions.
 4. Records `model`, `in_tokens`, `out_tokens`, `cache_read`, `cache_write_5m`, `cache_write_1h`, `web_search`, `web_fetch`, `used_thinking`, `msgs`.
 
 ### Path normalization (Windows)

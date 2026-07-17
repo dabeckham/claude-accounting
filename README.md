@@ -218,7 +218,7 @@ Four self‑contained narrative write‑ups, dogfooded from this very ledger, ex
 
 The hooks only start logging once installed, so days before that are blank. But Claude Code keeps full per‑message transcripts under `~/.claude/projects/**/*.jsonl` going back weeks, and every assistant message carries the model + token usage needed to rebuild a turn. **`backfill-from-transcripts.py`** replays those transcripts and appends one reconstructed `turn_end` per turn.
 
-The catch is that a *naive* per‑message sum doesn't reconcile — transcripts repeat streaming snapshots, so counting them over/under‑counts. The backfill therefore reuses the **exact same per‑turn summer the live hook uses** (`timelog_core.py`), so a reconstructed turn is counted byte‑for‑byte the way it would have been counted live.
+The catch is that a *naive* per‑message sum over‑counts — transcripts repeat each streamed response as several records sharing one `requestId`. The summer (`timelog_core.py`) therefore **dedupes by `requestId`**, counting each real API call once, and the backfill reuses that exact same per‑turn summer the live hook uses, so a reconstructed turn is counted the same way a live one is.
 
 ```sh
 python ~/.claude/backfill-from-transcripts.py --verify     # gate: reproduce known days to the cent
